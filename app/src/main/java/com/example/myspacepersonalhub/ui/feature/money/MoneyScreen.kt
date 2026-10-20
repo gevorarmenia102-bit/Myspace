@@ -169,26 +169,25 @@ fun MoneyScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
                     selected = state.selectedType == null,
                     onClick = { viewModel.selectType(null) },
-                    label = { Text("All", fontSize = 10.sp) },
-                    modifier = Modifier.weight(1f)
+                    label = { Text("All", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
                 FilterChip(
                     selected = state.selectedType == TransactionType.INCOME,
                     onClick = { viewModel.selectType(TransactionType.INCOME) },
-                    label = { Text("Income", fontSize = 10.sp) },
-                    modifier = Modifier.weight(1f)
+                    label = { Text("Income", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
                 FilterChip(
                     selected = state.selectedType == TransactionType.EXPENSE,
                     onClick = { viewModel.selectType(TransactionType.EXPENSE) },
-                    label = { Text("Expense", fontSize = 10.sp) },
-                    modifier = Modifier.weight(1f)
+                    label = { Text("Expense", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
             }
 

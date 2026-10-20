@@ -161,15 +161,16 @@ fun TaskEditScreen(
             // Priority Selector
             Text("PRIORITY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Priority.values().forEach { p ->
                     FilterChip(
                         selected = priority == p,
                         onClick = { priority = p },
-                        label = { Text(p.name, fontSize = 12.sp) },
-                        modifier = Modifier.weight(1f)
+                        label = { Text(p.name, fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     )
                 }
             }
@@ -178,15 +179,16 @@ fun TaskEditScreen(
             if (isEditMode) {
                 Text("STATUS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE).forEach { s ->
                         FilterChip(
                             selected = status == s,
                             onClick = { status = s },
-                            label = { Text(s.name.replace("_", " "), fontSize = 12.sp) },
-                            modifier = Modifier.weight(1f)
+                            label = { Text(s.name.replace("_", " "), fontSize = 12.sp, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
@@ -280,15 +282,16 @@ fun TaskEditScreen(
             // Recurrence
             Text("REPEAT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf("NONE", "DAILY", "WEEKLY", "MONTHLY").forEach { rule ->
                     FilterChip(
                         selected = recurrenceRule == rule,
                         onClick = { recurrenceRule = rule },
-                        label = { Text(if (rule == "NONE") "Never" else rule.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp) },
-                        modifier = Modifier.weight(1f)
+                        label = { Text(if (rule == "NONE") "Never" else rule.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     )
                 }
             }

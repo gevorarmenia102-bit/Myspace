@@ -116,7 +116,7 @@ fun TransactionEditScreen(
                 FilterChip(
                     selected = type == TransactionType.EXPENSE,
                     onClick = { type = TransactionType.EXPENSE },
-                    label = { Text("Expense", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    label = { Text("Expense", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false) },
                     modifier = Modifier.weight(1f),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = AccentRed.copy(alpha = 0.2f),
@@ -126,7 +126,7 @@ fun TransactionEditScreen(
                 FilterChip(
                     selected = type == TransactionType.INCOME,
                     onClick = { type = TransactionType.INCOME },
-                    label = { Text("Income", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    label = { Text("Income", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false) },
                     modifier = Modifier.weight(1f),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = AccentEmerald.copy(alpha = 0.2f),
@@ -172,7 +172,7 @@ fun TransactionEditScreen(
                     FilterChip(
                         selected = currencyCode == curr,
                         onClick = { currencyCode = curr },
-                        label = { Text(curr, fontSize = 9.sp) }
+                        label = { Text(curr, fontSize = 11.sp, maxLines = 1, softWrap = false) }
                     )
                 }
             }
@@ -204,7 +204,7 @@ fun TransactionEditScreen(
                     FilterChip(
                         selected = category == cat,
                         onClick = { category = cat },
-                        label = { Text(cat, fontSize = 10.sp) }
+                        label = { Text(cat, fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     )
                 }
             }
@@ -212,15 +212,16 @@ fun TransactionEditScreen(
             // Payment Method
             Text("PAYMENT METHOD", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf("Cash", "Card", "Bank Transfer", "Other").forEach { method ->
                     FilterChip(
                         selected = paymentMethod == method,
                         onClick = { paymentMethod = method },
-                        label = { Text(method, fontSize = 10.sp) },
-                        modifier = Modifier.weight(1f)
+                        label = { Text(method, fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     )
                 }
             }
