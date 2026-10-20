@@ -6,7 +6,10 @@ import com.example.myspacepersonalhub.core.model.SyncState
 import com.example.myspacepersonalhub.core.util.ContactVCardUtils
 import kotlinx.coroutines.flow.Flow
 
-class ContactRepository(private val contactDao: ContactDao) {
+class ContactRepository(
+    private val contactDao: ContactDao,
+    private val onDataChanged: (() -> Unit)? = null
+) {
 
     fun getAllContacts(): Flow<List<ContactEntity>> = contactDao.getAllContacts()
 
@@ -46,15 +49,18 @@ class ContactRepository(private val contactDao: ContactDao) {
         )
 
         contactDao.insertContact(updatedContact)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
     suspend fun deleteContact(id: String) {
         contactDao.softDeleteContact(id)
+        onDataChanged?.invoke()
     }
 
     suspend fun importContacts(contacts: List<ContactEntity>) {
         contactDao.insertContacts(contacts)
+        onDataChanged?.invoke()
     }
 
     fun getContactCount(): Flow<Int> = contactDao.getContactCount()

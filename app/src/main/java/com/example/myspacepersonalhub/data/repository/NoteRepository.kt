@@ -5,7 +5,10 @@ import com.example.myspacepersonalhub.core.database.entity.NoteEntity
 import com.example.myspacepersonalhub.core.model.SyncState
 import kotlinx.coroutines.flow.Flow
 
-class NoteRepository(private val noteDao: NoteDao) {
+class NoteRepository(
+    private val noteDao: NoteDao,
+    private val onDataChanged: (() -> Unit)? = null
+) {
 
     fun getAllNotes(): Flow<List<NoteEntity>> = noteDao.getAllNotes()
 
@@ -39,16 +42,29 @@ class NoteRepository(private val noteDao: NoteDao) {
             syncState = if (note.syncState == SyncState.SYNCED) SyncState.PENDING_UPDATE else note.syncState
         )
         noteDao.insertNote(updated)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
-    suspend fun moveToTrash(id: String) = noteDao.moveToTrash(id)
+    suspend fun moveToTrash(id: String) {
+        noteDao.moveToTrash(id)
+        onDataChanged?.invoke()
+    }
 
-    suspend fun restoreFromTrash(id: String) = noteDao.restoreFromTrash(id)
+    suspend fun restoreFromTrash(id: String) {
+        noteDao.restoreFromTrash(id)
+        onDataChanged?.invoke()
+    }
 
-    suspend fun deletePermanently(note: NoteEntity) = noteDao.deleteNote(note)
+    suspend fun deletePermanently(note: NoteEntity) {
+        noteDao.softDeleteNote(note.id)
+        onDataChanged?.invoke()
+    }
 
-    suspend fun emptyTrash() = noteDao.emptyTrash()
+    suspend fun emptyTrash() {
+        noteDao.emptyTrash()
+        onDataChanged?.invoke()
+    }
 
     fun getNoteCount(): Flow<Int> = noteDao.getNoteCount()
 }

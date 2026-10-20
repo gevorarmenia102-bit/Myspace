@@ -47,17 +47,17 @@ interface NoteDao {
     @Update
     suspend fun updateNote(note: NoteEntity)
 
-    @Query("UPDATE notes SET inTrash = 1, updatedAt = :timestamp WHERE id = :id")
+    @Query("UPDATE notes SET inTrash = 1, updatedAt = :timestamp, syncState = 'PENDING_UPDATE' WHERE id = :id")
     suspend fun moveToTrash(id: String, timestamp: Long = System.currentTimeMillis())
 
-    @Query("UPDATE notes SET inTrash = 0, updatedAt = :timestamp WHERE id = :id")
+    @Query("UPDATE notes SET inTrash = 0, updatedAt = :timestamp, syncState = 'PENDING_UPDATE' WHERE id = :id")
     suspend fun restoreFromTrash(id: String, timestamp: Long = System.currentTimeMillis())
 
     @Query("UPDATE notes SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE id = :id")
     suspend fun softDeleteNote(id: String, timestamp: Long = System.currentTimeMillis())
 
-    @Query("DELETE FROM notes WHERE inTrash = 1")
-    suspend fun emptyTrash()
+    @Query("UPDATE notes SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE inTrash = 1")
+    suspend fun emptyTrash(timestamp: Long = System.currentTimeMillis())
 
     @Delete
     suspend fun deleteNote(note: NoteEntity)

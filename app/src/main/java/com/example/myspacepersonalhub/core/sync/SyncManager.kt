@@ -147,6 +147,26 @@ class SyncManager(
         gitHubStorageManager.testConnection(token, owner, repo)
     }
 
+    private var debouncePushJob: Job? = null
+
+    /**
+     * Trigger immediate asynchronous cloud synchronization for local additions,
+     * updates, or deletions. Debounced by 300ms to batch rapid changes.
+     */
+    fun triggerRealtimePush() {
+        scope.launch {
+            debouncePushJob?.cancel()
+            debouncePushJob = launch {
+                delay(300)
+                try {
+                    syncNow()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Background realtime push failed: ${e.message}")
+                }
+            }
+        }
+    }
+
     /**
      * Start Realtime bi-directional synchronization via Firebase WebSockets.
      * Propagates changes in under 200ms across all connected devices.

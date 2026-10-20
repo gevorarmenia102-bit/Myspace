@@ -9,7 +9,10 @@ import com.example.myspacepersonalhub.core.notifications.NotificationHelper
 import kotlinx.coroutines.flow.Flow
 import java.util.Calendar
 
-class TaskRepository(private val taskDao: TaskDao) {
+class TaskRepository(
+    private val taskDao: TaskDao,
+    private val onDataChanged: (() -> Unit)? = null
+) {
 
     fun getAllTasks(): Flow<List<TaskEntity>> = taskDao.getAllTasks()
 
@@ -70,6 +73,7 @@ class TaskRepository(private val taskDao: TaskDao) {
             NotificationHelper.cancelReminder(context, updated.id)
         }
 
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
@@ -109,11 +113,13 @@ class TaskRepository(private val taskDao: TaskDao) {
                 taskDao.insertTask(nextTask)
             }
         }
+        onDataChanged?.invoke()
     }
 
     suspend fun deleteTask(task: TaskEntity, context: Context) {
         NotificationHelper.cancelReminder(context, task.id)
         taskDao.softDeleteTask(task.id)
+        onDataChanged?.invoke()
     }
 
     fun getActiveTasksCount(): Flow<Int> = taskDao.getActiveTasksCount()

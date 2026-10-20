@@ -10,7 +10,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MoneyRepository(private val moneyDao: MoneyDao) {
+class MoneyRepository(
+    private val moneyDao: MoneyDao,
+    private val onDataChanged: (() -> Unit)? = null
+) {
 
     fun getAllTransactions(): Flow<List<TransactionEntity>> = moneyDao.getAllTransactions()
 
@@ -36,10 +39,14 @@ class MoneyRepository(private val moneyDao: MoneyDao) {
             syncState = if (transaction.syncState == SyncState.SYNCED) SyncState.PENDING_UPDATE else transaction.syncState
         )
         moneyDao.insertTransaction(updated)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
-    suspend fun deleteTransaction(id: String) = moneyDao.softDeleteTransaction(id)
+    suspend fun deleteTransaction(id: String) {
+        moneyDao.softDeleteTransaction(id)
+        onDataChanged?.invoke()
+    }
 
     // Budgets
     fun getAllBudgets(): Flow<List<BudgetEntity>> = moneyDao.getAllBudgets()
@@ -49,10 +56,14 @@ class MoneyRepository(private val moneyDao: MoneyDao) {
             return Result.failure(IllegalArgumentException("Budget limit must be greater than zero"))
         }
         moneyDao.insertBudget(budget.copy(updatedAt = System.currentTimeMillis()))
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
-    suspend fun deleteBudget(id: String) = moneyDao.softDeleteBudget(id)
+    suspend fun deleteBudget(id: String) {
+        moneyDao.softDeleteBudget(id)
+        onDataChanged?.invoke()
+    }
 
     fun exportToCsv(transactions: List<TransactionEntity>): String {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
