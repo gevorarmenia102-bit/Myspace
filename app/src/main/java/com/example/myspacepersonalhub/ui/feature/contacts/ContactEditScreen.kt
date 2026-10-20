@@ -1,7 +1,11 @@
 package com.example.myspacepersonalhub.ui.feature.contacts
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,14 +29,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.example.myspacepersonalhub.core.database.entity.ContactEntity
 import com.example.myspacepersonalhub.core.model.PhoneNumber
 import com.example.myspacepersonalhub.theme.*
 import com.example.myspacepersonalhub.ui.components.ConfirmationDialog
 import com.example.myspacepersonalhub.ui.components.FullImageViewerDialog
 import com.example.myspacepersonalhub.ui.components.InitialAvatar
+import com.example.myspacepersonalhub.core.util.SnackbarController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -77,36 +85,119 @@ fun ContactEditScreen(
     var emailError by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showFullPhotoDialog by remember { mutableStateOf(false) }
+    var showPhotoSourceSheet by remember { mutableStateOf(false) }
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     var isLoaded by remember { mutableStateOf(false) }
+
+    val processAndSaveImage: (Uri) -> Unit = { sourceUri ->
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val avatarDir = File(context.filesDir, "avatars").apply { mkdirs() }
+                val destFile = File(avatarDir, "avatar_${UUID.randomUUID()}.jpg")
+
+                var orientation = ExifInterface.ORIENTATION_NORMAL
+                try {
+                    context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                        val exif = ExifInterface(input)
+                        orientation = exif.getAttributeInt(
+                            ExifInterface.TAG_ORIENTATION,
+                            ExifInterface.ORIENTATION_NORMAL
+                        )
+                    }
+                } catch (ignored: Exception) {
+                }
+
+                context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                    val original = BitmapFactory.decodeStream(input)
+                    if (original != null) {
+                        val rotationDegrees = when (orientation) {
+                            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                            else -> 0f
+                        }
+                        val rotated = if (rotationDegrees != 0f) {
+                            val matrix = Matrix().apply { postRotate(rotationDegrees) }
+                            Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+                        } else original
+
+                        val maxDim = 1024
+                        val scaled = if (rotated.width > maxDim || rotated.height > maxDim) {
+                            val ratio = rotated.width.toFloat() / rotated.height.toFloat()
+                            val (w, h) = if (ratio > 1f) maxDim to (maxDim / ratio).toInt() else (maxDim * ratio).toInt() to maxDim
+                            Bitmap.createScaledBitmap(rotated, w, h, true)
+                        } else rotated
+
+                        destFile.outputStream().use { out ->
+                            scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        }
+                        profileImageLocalPath = destFile.absolutePath
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            SnackbarController.showMessage("Could not decode selected image")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    SnackbarController.showMessage("Failed to process image: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            }
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { sourceUri ->
-            coroutineScope.launch(Dispatchers.IO) {
-                try {
-                    val avatarDir = File(context.filesDir, "avatars").apply { mkdirs() }
-                    val destFile = File(avatarDir, "avatar_${UUID.randomUUID()}.jpg")
-                    context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                        val original = BitmapFactory.decodeStream(input)
-                        if (original != null) {
-                            val maxDim = 1024
-                            val scaled = if (original.width > maxDim || original.height > maxDim) {
-                                val ratio = original.width.toFloat() / original.height.toFloat()
-                                val (w, h) = if (ratio > 1f) maxDim to (maxDim / ratio).toInt() else (maxDim * ratio).toInt() to maxDim
-                                Bitmap.createScaledBitmap(original, w, h, true)
-                            } else original
+            processAndSaveImage(sourceUri)
+        }
+    }
 
-                            destFile.outputStream().use { out ->
-                                scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                            }
-                            profileImageLocalPath = destFile.absolutePath
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            tempCameraUri?.let { uri ->
+                processAndSaveImage(uri)
             }
+        }
+    }
+
+    val launchCamera: () -> Unit = {
+        try {
+            val photosDir = File(context.cacheDir, "camera_photos").apply { mkdirs() }
+            val tempPhotoFile = File(photosDir, "captured_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                tempPhotoFile
+            )
+            tempCameraUri = uri
+            takePictureLauncher.launch(uri)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            SnackbarController.showMessage("Unable to open camera: ${e.localizedMessage ?: "Unknown error"}")
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            launchCamera()
+        } else {
+            SnackbarController.showMessage("Camera permission is required to take a picture")
+        }
+    }
+
+    val requestCamera: () -> Unit = {
+        val permission = Manifest.permission.CAMERA
+        if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
+            launchCamera()
+        } else {
+            cameraPermissionLauncher.launch(permission)
         }
     }
 
@@ -244,7 +335,7 @@ fun ContactEditScreen(
                                 if (!profileImageLocalPath.isNullOrBlank()) {
                                     showFullPhotoDialog = true
                                 } else {
-                                    photoPickerLauncher.launch("image/*")
+                                    showPhotoSourceSheet = true
                                 }
                             }
                         )
@@ -254,7 +345,7 @@ fun ContactEditScreen(
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.primary)
                                 .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
-                                .clickable { photoPickerLauncher.launch("image/*") },
+                                .clickable { showPhotoSourceSheet = true },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -270,11 +361,11 @@ fun ContactEditScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedButton(
-                            onClick = { photoPickerLauncher.launch("image/*") },
+                            onClick = { showPhotoSourceSheet = true },
                             shape = RoundedCornerShape(20.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                         ) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(if (profileImageLocalPath.isNullOrBlank()) "Set Photo" else "Change Photo", fontSize = 13.sp)
                         }
@@ -524,5 +615,176 @@ fun ContactEditScreen(
             },
             onDismiss = { showDeleteConfirm = false }
         )
+    }
+
+    if (showPhotoSourceSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showPhotoSourceSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .navigationBarsPadding()
+            ) {
+                Text(
+                    text = "Profile Picture",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Select an option to update contact photo",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 18.dp)
+                )
+
+                // Option 1: Take Photo with Camera
+                Surface(
+                    onClick = {
+                        showPhotoSourceSheet = false
+                        requestCamera()
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = "Camera",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "Take Photo",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Use camera to capture a new photo",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Option 2: Pick from Gallery
+                Surface(
+                    onClick = {
+                        showPhotoSourceSheet = false
+                        photoPickerLauncher.launch("image/*")
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(AccentBlue.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.PhotoLibrary,
+                                contentDescription = "Gallery",
+                                tint = AccentBlue,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "Choose from Gallery",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Select an existing photo from storage",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                if (!profileImageLocalPath.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Option 3: Remove Current Photo
+                    Surface(
+                        onClick = {
+                            showPhotoSourceSheet = false
+                            profileImageLocalPath = null
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = AccentRed.copy(alpha = 0.1f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(AccentRed.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.DeleteOutline,
+                                    contentDescription = "Remove",
+                                    tint = AccentRed,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = "Remove Photo",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = AccentRed
+                                )
+                                Text(
+                                    text = "Remove current contact picture",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
     }
 }
