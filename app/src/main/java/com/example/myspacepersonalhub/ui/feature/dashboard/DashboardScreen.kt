@@ -8,8 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -52,7 +52,7 @@ fun DashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val secretTrigger = rememberSecretCloudTrigger(targetClicks = 15)
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     Scaffold(
         topBar = {
@@ -228,8 +228,8 @@ private fun HeroGreetingCard(
         } else {
             Brush.linearGradient(
                 colors = listOf(
-                    Color(0xFFE2E8F0),
-                    Color(0xFFF8FAFC)
+                    Color(0xFFFFFFFF),
+                    Color(0xFFF1F5F9)
                 )
             )
         }
@@ -245,8 +245,9 @@ private fun HeroGreetingCard(
             .clip(RoundedCornerShape(22.dp))
             .clickable(onClick = onSecretTap),
         shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-        shadowElevation = 4.dp
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isDark) 0.25f else 0.45f)),
+        shadowElevation = if (isDark) 4.dp else 2.dp
     ) {
         Box(
             modifier = Modifier
@@ -265,17 +266,17 @@ private fun HeroGreetingCard(
                                 text = "Welcome back",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = AccentEmerald
+                                color = if (isDark) AccentEmerald else Color(0xFF047857)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("✦", fontSize = 10.sp, color = AccentEmerald)
+                            Text("✦", fontSize = 10.sp, color = if (isDark) AccentEmerald else Color(0xFF047857))
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = greeting,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(3.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -298,6 +299,7 @@ private fun HeroGreetingCard(
                         modifier = Modifier
                             .size(52.dp)
                             .clip(RoundedCornerShape(16.dp))
+                            .background(if (isDark) Color(0xFF0B111E) else Color(0xFFE2E8F0).copy(alpha = 0.5f))
                             .border(1.5.dp, iconTint.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -316,7 +318,7 @@ private fun HeroGreetingCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
+                        .background(if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -324,19 +326,19 @@ private fun HeroGreetingCard(
                     StatusChip(
                         icon = Icons.Default.TaskAlt,
                         text = "$tasksCount tasks due",
-                        color = if (tasksCount > 0) AccentBlue else AccentEmerald
+                        color = if (tasksCount > 0) AccentBlue else if (isDark) AccentEmerald else Color(0xFF047857)
                     )
                     Text("•", color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), fontSize = 12.sp)
                     StatusChip(
                         icon = Icons.Default.People,
                         text = "$contactCount contacts",
-                        color = AccentEmerald
+                        color = if (isDark) AccentEmerald else Color(0xFF047857)
                     )
                     Text("•", color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), fontSize = 12.sp)
                     StatusChip(
                         icon = Icons.Default.Lock,
                         text = "Encrypted",
-                        color = AccentPurple
+                        color = if (isDark) AccentPurple else Color(0xFF6D28D9)
                     )
                 }
             }
@@ -353,7 +355,7 @@ private fun StatusChip(
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(13.dp))
         Spacer(modifier = Modifier.width(4.dp))
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
