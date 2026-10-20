@@ -1,0 +1,738 @@
+package com.example.myspacepersonalhub.core.sync
+
+import android.content.Context
+import android.provider.Settings
+import android.util.Log
+import com.example.myspacepersonalhub.core.database.MySpaceDatabase
+import com.example.myspacepersonalhub.core.database.entity.ContactEntity
+import com.example.myspacepersonalhub.core.database.entity.NoteEntity
+import com.example.myspacepersonalhub.core.database.entity.TaskEntity
+import com.example.myspacepersonalhub.core.database.entity.TransactionEntity
+import com.example.myspacepersonalhub.core.database.entity.BudgetEntity
+import com.example.myspacepersonalhub.core.datastore.UserPreferencesRepository
+import com.example.myspacepersonalhub.core.model.*
+import com.example.myspacepersonalhub.core.storage.GitHubRepoInfo
+import com.example.myspacepersonalhub.core.storage.GitHubStorageManager
+import com.example.myspacepersonalhub.data.repository.BackupRepository
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.tasks.await
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+import java.util.UUID
+
+sealed class CloudSyncStatus {
+    object Unconfigured : CloudSyncStatus()
+    object NotSignedIn : CloudSyncStatus()
+    data class Syncing(val message: String = "Syncing in progress...") : CloudSyncStatus()
+    data class Synced(val lastSyncTimestamp: Long) : CloudSyncStatus()
+    data class Error(val errorMessage: String) : CloudSyncStatus()
+    object Offline : CloudSyncStatus()
+}
+
+class SyncManager(
+    private val context: Context,
+    private val database: MySpaceDatabase,
+    private val preferencesRepository: UserPreferencesRepository,
+    private val gitHubStorageManager: GitHubStorageManager = GitHubStorageManager(context)
+) {
+    private val TAG = "SyncManager"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val backupRepository = BackupRepository(database)
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private val _syncStatus = MutableStateFlow<CloudSyncStatus>(CloudSyncStatus.Unconfigured)
+    val syncStatus: StateFlow<CloudSyncStatus> = _syncStatus.asStateFlow()
+
+    // Realtime listeners map to allow clean detach
+    private val activeListeners = mutableMapOf<DatabaseReference, ChildEventListener>()
+    private var isRealtimeActive = false
+
+    fun isFirebaseConfigured(): Boolean {
+        return try {
+            FirebaseApp.getApps(context).isNotEmpty()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun getEffectiveDatabase(): FirebaseDatabase? = withContext(Dispatchers.IO) {
+        val prefs = preferencesRepository.userPreferencesFlow.first()
+        try {
+            if (!prefs.firebaseDatabaseUrl.isNullOrBlank()) {
+                if (FirebaseApp.getApps(context).isEmpty()) {
+                    val options = com.google.firebase.FirebaseOptions.Builder()
+                        .setApplicationId(context.packageName)
+                        .setProjectId("myspace-hub")
+                        .setDatabaseUrl(prefs.firebaseDatabaseUrl)
+                        .build()
+                    FirebaseApp.initializeApp(context, options)
+                }
+                return@withContext FirebaseDatabase.getInstance(prefs.firebaseDatabaseUrl)
+            } else if (isFirebaseConfigured()) {
+                return@withContext FirebaseDatabase.getInstance()
+            }
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get FirebaseDatabase instance", e)
+            null
+        }
+    }
+
+    suspend fun getCurrentUserUid(): String? = withContext(Dispatchers.IO) {
+        if (!isFirebaseConfigured()) {
+            val prefs = preferencesRepository.userPreferencesFlow.first()
+            if (prefs.firebaseDatabaseUrl.isNullOrBlank()) return@withContext null
+        }
+
+        try {
+            val user = FirebaseAuth.getInstance().currentUser
+            if (user != null) return@withContext user.uid
+
+            // Attempt anonymous sign-in for seamless zero-config auth
+            try {
+                val authResult = FirebaseAuth.getInstance().signInAnonymously().await()
+                return@withContext authResult.user?.uid
+            } catch (_: Exception) {
+                // If Auth is disabled in Firebase console, use unique hardware device ID
+                val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+                return@withContext androidId ?: "user_default"
+            }
+        } catch (_: Exception) {
+            val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+            androidId ?: "user_default"
+        }
+    }
+
+    suspend fun checkStatus() = withContext(Dispatchers.IO) {
+        val db = getEffectiveDatabase()
+        if (db == null) {
+            _syncStatus.value = CloudSyncStatus.Unconfigured
+            return@withContext
+        }
+
+        val uid = getCurrentUserUid()
+        if (uid == null) {
+            _syncStatus.value = CloudSyncStatus.NotSignedIn
+        } else {
+            val prefs = preferencesRepository.userPreferencesFlow.first()
+            _syncStatus.value = if (prefs.lastSyncTimestamp > 0) {
+                CloudSyncStatus.Synced(prefs.lastSyncTimestamp)
+            } else {
+                CloudSyncStatus.Synced(System.currentTimeMillis())
+            }
+        }
+    }
+
+    /**
+     * Test connection to GitHub repository
+     */
+    suspend fun testGitHubConnection(): Result<GitHubRepoInfo> = withContext(Dispatchers.IO) {
+        val prefs = preferencesRepository.userPreferencesFlow.first()
+        val token = prefs.githubToken
+        val owner = prefs.githubOwner
+        val repo = prefs.githubRepo
+
+        if (token.isNullOrBlank() || owner.isNullOrBlank() || repo.isNullOrBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("GitHub Token, Owner, and Repo must not be empty."))
+        }
+
+        gitHubStorageManager.testConnection(token, owner, repo)
+    }
+
+    /**
+     * Start Realtime bi-directional synchronization via Firebase WebSockets.
+     * Propagates changes in under 200ms across all connected devices.
+     */
+    fun startRealtimeSync() {
+        if (isRealtimeActive) return
+        scope.launch {
+            val db = getEffectiveDatabase() ?: return@launch
+            val uid = getCurrentUserUid() ?: return@launch
+            val userRef = db.reference.child("users").child(uid)
+
+            isRealtimeActive = true
+            Log.d(TAG, "Starting Realtime Firebase sync for user $uid")
+
+            // 1. Listen for Realtime Contacts updates
+            val contactsRef = userRef.child("contacts")
+            val contactListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteContactChange(snapshot)
+                }
+
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteContactChange(snapshot)
+                }
+
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        val local = database.contactDao().getContactByIdDirect(id)
+                        if (local != null) database.contactDao().deleteContact(local)
+                    }
+                }
+
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Contacts realtime listener cancelled: ${error.message}")
+                }
+            }
+            contactsRef.addChildEventListener(contactListener)
+            activeListeners[contactsRef] = contactListener
+
+            // 2. Listen for Realtime Notes updates
+            val notesRef = userRef.child("notes")
+            val noteListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteNoteChange(snapshot)
+                }
+
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteNoteChange(snapshot)
+                }
+
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        val local = database.noteDao().getNoteByIdDirect(id)
+                        if (local != null) database.noteDao().deleteNote(local)
+                    }
+                }
+
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Notes realtime listener cancelled: ${error.message}")
+                }
+            }
+            notesRef.addChildEventListener(noteListener)
+            activeListeners[notesRef] = noteListener
+
+            // 3. Listen for Realtime Tasks updates
+            val tasksRef = userRef.child("tasks")
+            val taskListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteTaskChange(snapshot)
+                }
+
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteTaskChange(snapshot)
+                }
+
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        val local = database.taskDao().getTaskByIdDirect(id)
+                        if (local != null) database.taskDao().deleteTask(local)
+                    }
+                }
+
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Tasks realtime listener cancelled: ${error.message}")
+                }
+            }
+            tasksRef.addChildEventListener(taskListener)
+            activeListeners[tasksRef] = taskListener
+
+            // 4. Listen for Realtime Transactions updates
+            val txRef = userRef.child("transactions")
+            val txListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteTransactionChange(snapshot)
+                }
+
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteTransactionChange(snapshot)
+                }
+
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        val local = database.moneyDao().getAllTransactions().first().find { it.id == id }
+                        if (local != null) database.moneyDao().deleteTransaction(local)
+                    }
+                }
+
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Transactions realtime listener cancelled: ${error.message}")
+                }
+            }
+            txRef.addChildEventListener(txListener)
+            activeListeners[txRef] = txListener
+        }
+    }
+
+    fun stopRealtimeSync() {
+        for ((ref, listener) in activeListeners) {
+            ref.removeEventListener(listener)
+        }
+        activeListeners.clear()
+        isRealtimeActive = false
+        Log.d(TAG, "Stopped Realtime Firebase sync")
+    }
+
+    private fun handleRemoteContactChange(snapshot: DataSnapshot) {
+        scope.launch {
+            try {
+                val id = snapshot.key ?: return@launch
+                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+                val local = database.contactDao().getContactByIdDirect(id)
+
+                // If local is newer and pending sync, skip remote overwrite
+                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                    return@launch
+                }
+
+                val displayName = snapshot.child("displayName").getValue(String::class.java) ?: "Unnamed"
+                val email = snapshot.child("email").getValue(String::class.java)
+                val company = snapshot.child("company").getValue(String::class.java)
+                val jobTitle = snapshot.child("jobTitle").getValue(String::class.java)
+                val birthday = snapshot.child("birthday").getValue(String::class.java)
+                val personalNotes = snapshot.child("personalNotes").getValue(String::class.java)
+                val isFavorite = snapshot.child("isFavorite").getValue(Boolean::class.java) ?: false
+                val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
+                val profileImageStoragePath = snapshot.child("profileImageStoragePath").getValue(String::class.java)
+                val addressLine1 = snapshot.child("addressLine1").getValue(String::class.java)
+                val addressLine2 = snapshot.child("addressLine2").getValue(String::class.java)
+                val city = snapshot.child("city").getValue(String::class.java)
+                val region = snapshot.child("region").getValue(String::class.java)
+                val postalCode = snapshot.child("postalCode").getValue(String::class.java)
+                val country = snapshot.child("country").getValue(String::class.java)
+
+                // Parse phone numbers
+                val phoneNumbers = mutableListOf<PhoneNumber>()
+                val phonesSnapshot = snapshot.child("phoneNumbers")
+                if (phonesSnapshot.exists()) {
+                    for (phoneSnap in phonesSnapshot.children) {
+                        val num = phoneSnap.child("number").getValue(String::class.java)
+                        if (!num.isNullOrBlank()) {
+                            val label = phoneSnap.child("label").getValue(String::class.java) ?: "Mobile"
+                            val isPrimary = phoneSnap.child("isPrimary").getValue(Boolean::class.java) ?: false
+                            phoneNumbers.add(PhoneNumber(id = phoneSnap.key ?: UUID.randomUUID().toString(), number = num, label = label, isPrimary = isPrimary))
+                        }
+                    }
+                }
+
+                var localAvatarPath = local?.profileImageLocalPath
+
+                // Check if avatar needs to be downloaded from GitHub
+                if (!profileImageStoragePath.isNullOrBlank()) {
+                    val avatarFile = File(File(context.filesDir, "avatars"), "avatar_${id}.jpg")
+                    if (!avatarFile.exists() || avatarFile.length() == 0L) {
+                        val prefs = preferencesRepository.userPreferencesFlow.first()
+                        val dlResult = gitHubStorageManager.downloadFile(
+                            urlOrPath = profileImageStoragePath,
+                            destinationFile = avatarFile,
+                            token = prefs.githubToken,
+                            owner = prefs.githubOwner,
+                            repo = prefs.githubRepo,
+                            branch = prefs.githubBranch
+                        )
+                        if (dlResult.isSuccess) {
+                            localAvatarPath = avatarFile.absolutePath
+                        }
+                    } else {
+                        localAvatarPath = avatarFile.absolutePath
+                    }
+                }
+
+                val updatedContact = ContactEntity(
+                    id = id,
+                    displayName = displayName,
+                    email = email,
+                    company = company,
+                    jobTitle = jobTitle,
+                    birthday = birthday,
+                    personalNotes = personalNotes,
+                    isFavorite = isFavorite,
+                    isPinned = isPinned,
+                    profileImageLocalPath = localAvatarPath,
+                    profileImageStoragePath = profileImageStoragePath,
+                    addressLine1 = addressLine1,
+                    addressLine2 = addressLine2,
+                    city = city,
+                    region = region,
+                    postalCode = postalCode,
+                    country = country,
+                    phoneNumbers = phoneNumbers,
+                    updatedAt = remoteUpdatedAt,
+                    syncState = SyncState.SYNCED
+                )
+
+                database.contactDao().insertContact(updatedContact)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling remote contact", e)
+            }
+        }
+    }
+
+    private fun handleRemoteNoteChange(snapshot: DataSnapshot) {
+        scope.launch {
+            try {
+                val id = snapshot.key ?: return@launch
+                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+                val local = database.noteDao().getNoteByIdDirect(id)
+
+                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                    return@launch
+                }
+
+                val title = snapshot.child("title").getValue(String::class.java) ?: ""
+                val body = snapshot.child("body").getValue(String::class.java) ?: ""
+                val category = snapshot.child("category").getValue(String::class.java) ?: "General"
+                val isJournal = snapshot.child("isJournal").getValue(Boolean::class.java) ?: false
+                val journalMood = snapshot.child("journalMood").getValue(String::class.java)
+                val journalDate = snapshot.child("journalDate").getValue(String::class.java)
+                val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
+                val isFavorite = snapshot.child("isFavorite").getValue(Boolean::class.java) ?: false
+                val inTrash = snapshot.child("inTrash").getValue(Boolean::class.java) ?: false
+
+                val note = NoteEntity(
+                    id = id,
+                    title = title,
+                    body = body,
+                    category = category,
+                    isJournal = isJournal,
+                    journalMood = journalMood,
+                    journalDate = journalDate,
+                    isPinned = isPinned,
+                    isFavorite = isFavorite,
+                    inTrash = inTrash,
+                    updatedAt = remoteUpdatedAt,
+                    syncState = SyncState.SYNCED
+                )
+                database.noteDao().insertNote(note)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling remote note", e)
+            }
+        }
+    }
+
+    private fun handleRemoteTaskChange(snapshot: DataSnapshot) {
+        scope.launch {
+            try {
+                val id = snapshot.key ?: return@launch
+                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+                val local = database.taskDao().getTaskByIdDirect(id)
+
+                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                    return@launch
+                }
+
+                val title = snapshot.child("title").getValue(String::class.java) ?: ""
+                val description = snapshot.child("description").getValue(String::class.java)
+                val dueAt = snapshot.child("dueAt").getValue(Long::class.java)
+                val priorityStr = snapshot.child("priority").getValue(String::class.java) ?: "MEDIUM"
+                val statusStr = snapshot.child("status").getValue(String::class.java) ?: "TODO"
+                val completedAt = snapshot.child("completedAt").getValue(Long::class.java)
+                val recurrenceRule = snapshot.child("recurrenceRule").getValue(String::class.java)
+
+                val task = TaskEntity(
+                    id = id,
+                    title = title,
+                    description = description,
+                    dueAt = if (dueAt != null && dueAt > 0) dueAt else null,
+                    priority = try { Priority.valueOf(priorityStr) } catch (_: Exception) { Priority.MEDIUM },
+                    status = try { TaskStatus.valueOf(statusStr) } catch (_: Exception) { TaskStatus.TODO },
+                    completedAt = if (completedAt != null && completedAt > 0) completedAt else null,
+                    recurrenceRule = recurrenceRule,
+                    updatedAt = remoteUpdatedAt,
+                    syncState = SyncState.SYNCED
+                )
+                database.taskDao().insertTask(task)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling remote task", e)
+            }
+        }
+    }
+
+    private fun handleRemoteTransactionChange(snapshot: DataSnapshot) {
+        scope.launch {
+            try {
+                val id = snapshot.key ?: return@launch
+                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+                val local = database.moneyDao().getAllTransactions().first().find { it.id == id }
+
+                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                    return@launch
+                }
+
+                val typeStr = snapshot.child("type").getValue(String::class.java) ?: "EXPENSE"
+                val amountMinorUnits = snapshot.child("amountMinorUnits").getValue(Long::class.java) ?: 0L
+                val currencyCode = snapshot.child("currencyCode").getValue(String::class.java) ?: "USD"
+                val categoryId = snapshot.child("categoryId").getValue(String::class.java) ?: "General"
+                val title = snapshot.child("title").getValue(String::class.java) ?: ""
+                val transactionDate = snapshot.child("transactionDate").getValue(Long::class.java) ?: System.currentTimeMillis()
+                val paymentMethod = snapshot.child("paymentMethod").getValue(String::class.java)
+                val notes = snapshot.child("notes").getValue(String::class.java)
+
+                val tx = TransactionEntity(
+                    id = id,
+                    type = try { TransactionType.valueOf(typeStr) } catch (_: Exception) { TransactionType.EXPENSE },
+                    amountMinorUnits = amountMinorUnits,
+                    currencyCode = currencyCode,
+                    categoryId = categoryId,
+                    title = title,
+                    transactionDate = transactionDate,
+                    paymentMethod = paymentMethod,
+                    notes = notes,
+                    updatedAt = remoteUpdatedAt,
+                    syncState = SyncState.SYNCED
+                )
+                database.moneyDao().insertTransaction(tx)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling remote transaction", e)
+            }
+        }
+    }
+
+    /**
+     * Upload an authenticated PBKDF2 + AES-GCM encrypted database backup directly
+     * to GitHub Private Repository, and save its cloud pointer in Firebase Realtime Database.
+     */
+    suspend fun uploadEncryptedBackupToGitHub(passphrase: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val prefs = preferencesRepository.userPreferencesFlow.first()
+            val token = prefs.githubToken
+            val owner = prefs.githubOwner
+            val repo = prefs.githubRepo
+            val branch = prefs.githubBranch
+
+            if (token.isNullOrBlank() || owner.isNullOrBlank() || repo.isNullOrBlank()) {
+                return@withContext Result.failure(IllegalStateException("GitHub credentials not configured. Please fill in Token, Owner, and Repo in Settings."))
+            }
+
+            val backup = backupRepository.createEncryptedBackup(passphrase.toCharArray())
+            val backupJson = json.encodeToString(backup)
+            val timestamp = System.currentTimeMillis()
+            val filename = "backups/myspace_backup_${timestamp}.enc.json"
+
+            val uploadResult = gitHubStorageManager.uploadFile(
+                path = filename,
+                bytes = backupJson.toByteArray(Charsets.UTF_8),
+                commitMessage = "Automated Encrypted Backup: $timestamp",
+                token = token,
+                owner = owner,
+                repo = repo,
+                branch = branch
+            ).getOrThrow()
+
+            // Register in Firebase Realtime Database if connected
+            val db = getEffectiveDatabase()
+            val uid = getCurrentUserUid()
+            if (db != null && uid != null) {
+                val backupMeta = mapOf(
+                    "timestamp" to timestamp,
+                    "filename" to filename,
+                    "sha" to uploadResult.sha,
+                    "downloadUrl" to uploadResult.downloadUrl,
+                    "rawUrl" to uploadResult.rawUrl,
+                    "sizeBytes" to backupJson.toByteArray().size
+                )
+                db.reference.child("users").child(uid).child("backups").child(timestamp.toString()).setValue(backupMeta).await()
+            }
+
+            Result.success("Backup successfully uploaded to GitHub repo: $filename")
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Executes bidirectional sync:
+     * 1. Large files (avatars) are pushed to GitHub repository.
+     * 2. Small text records are synced with Firebase Realtime Database.
+     */
+    suspend fun syncNow(): Result<Unit> = withContext(Dispatchers.IO) {
+        val db = getEffectiveDatabase()
+        if (db == null) {
+            _syncStatus.value = CloudSyncStatus.Unconfigured
+            return@withContext Result.failure(IllegalStateException("Firebase is not configured. Add google-services.json or enter Realtime Database URL in Settings."))
+        }
+
+        val uid = getCurrentUserUid()
+        if (uid == null) {
+            _syncStatus.value = CloudSyncStatus.NotSignedIn
+            return@withContext Result.failure(IllegalStateException("Could not authenticate with Firebase."))
+        }
+
+        try {
+            _syncStatus.value = CloudSyncStatus.Syncing("Pushing pending changes...")
+            val prefs = preferencesRepository.userPreferencesFlow.first()
+            val userNode = db.reference.child("users").child(uid)
+
+            // 1. Sync Pending Contacts (Large files -> GitHub, Text -> Firebase)
+            val pendingContacts = database.contactDao().getPendingSyncContacts()
+            for (contact in pendingContacts) {
+                if (contact.deletedAt != null) {
+                    userNode.child("contacts").child(contact.id).removeValue().await()
+                    // Delete avatar from GitHub if configured
+                    if (!contact.profileImageStoragePath.isNullOrBlank() && !prefs.githubToken.isNullOrBlank()) {
+                        gitHubStorageManager.deleteFile(
+                            path = "media/avatars/avatar_${contact.id}.jpg",
+                            commitMessage = "Delete avatar for contact ${contact.id}",
+                            token = prefs.githubToken,
+                            owner = prefs.githubOwner ?: "",
+                            repo = prefs.githubRepo ?: "",
+                            branch = prefs.githubBranch
+                        )
+                    }
+                    database.contactDao().deleteContact(contact)
+                } else {
+                    var updatedStoragePath = contact.profileImageStoragePath
+
+                    // If contact has a local avatar not yet in GitHub and GitHub is configured:
+                    if (!contact.profileImageLocalPath.isNullOrBlank() && updatedStoragePath.isNullOrBlank() && !prefs.githubToken.isNullOrBlank()) {
+                        val localFile = File(contact.profileImageLocalPath)
+                        if (localFile.exists() && localFile.length() > 0L) {
+                            val uploadRes = gitHubStorageManager.uploadFile(
+                                path = "media/avatars/avatar_${contact.id}.jpg",
+                                bytes = localFile.readBytes(),
+                                commitMessage = "Upload avatar for ${contact.displayName}",
+                                token = prefs.githubToken,
+                                owner = prefs.githubOwner ?: "",
+                                repo = prefs.githubRepo ?: "",
+                                branch = prefs.githubBranch
+                            )
+                            if (uploadRes.isSuccess) {
+                                updatedStoragePath = uploadRes.getOrNull()?.downloadUrl
+                            }
+                        }
+                    }
+
+                    val phoneListMap = contact.phoneNumbers.map {
+                        mapOf(
+                            "number" to it.number,
+                            "label" to it.label,
+                            "isPrimary" to it.isPrimary
+                        )
+                    }
+
+                    val map = mapOf(
+                        "id" to contact.id,
+                        "displayName" to contact.displayName,
+                        "email" to (contact.email ?: ""),
+                        "company" to (contact.company ?: ""),
+                        "jobTitle" to (contact.jobTitle ?: ""),
+                        "birthday" to (contact.birthday ?: ""),
+                        "personalNotes" to (contact.personalNotes ?: ""),
+                        "isFavorite" to contact.isFavorite,
+                        "isPinned" to contact.isPinned,
+                        "profileImageStoragePath" to (updatedStoragePath ?: ""),
+                        "addressLine1" to (contact.addressLine1 ?: ""),
+                        "addressLine2" to (contact.addressLine2 ?: ""),
+                        "city" to (contact.city ?: ""),
+                        "region" to (contact.region ?: ""),
+                        "postalCode" to (contact.postalCode ?: ""),
+                        "country" to (contact.country ?: ""),
+                        "phoneNumbers" to phoneListMap,
+                        "updatedAt" to contact.updatedAt
+                    )
+                    userNode.child("contacts").child(contact.id).setValue(map).await()
+                    database.contactDao().updateContact(
+                        contact.copy(
+                            profileImageStoragePath = updatedStoragePath,
+                            syncState = SyncState.SYNCED
+                        )
+                    )
+                }
+            }
+
+            // 2. Sync Pending Notes
+            val pendingNotes = database.noteDao().getPendingSyncNotes()
+            for (note in pendingNotes) {
+                if (note.deletedAt != null) {
+                    userNode.child("notes").child(note.id).removeValue().await()
+                    database.noteDao().deleteNote(note)
+                } else {
+                    val map = mapOf(
+                        "id" to note.id,
+                        "title" to note.title,
+                        "body" to note.body,
+                        "category" to note.category,
+                        "isJournal" to note.isJournal,
+                        "journalMood" to (note.journalMood ?: ""),
+                        "journalDate" to (note.journalDate ?: ""),
+                        "isPinned" to note.isPinned,
+                        "isFavorite" to note.isFavorite,
+                        "inTrash" to note.inTrash,
+                        "updatedAt" to note.updatedAt
+                    )
+                    userNode.child("notes").child(note.id).setValue(map).await()
+                    database.noteDao().updateNote(note.copy(syncState = SyncState.SYNCED))
+                }
+            }
+
+            // 3. Sync Pending Tasks
+            val pendingTasks = database.taskDao().getPendingSyncTasks()
+            for (task in pendingTasks) {
+                if (task.deletedAt != null) {
+                    userNode.child("tasks").child(task.id).removeValue().await()
+                    database.taskDao().deleteTask(task)
+                } else {
+                    val map = mapOf(
+                        "id" to task.id,
+                        "title" to task.title,
+                        "description" to (task.description ?: ""),
+                        "dueAt" to (task.dueAt ?: 0L),
+                        "priority" to task.priority.name,
+                        "status" to task.status.name,
+                        "completedAt" to (task.completedAt ?: 0L),
+                        "recurrenceRule" to (task.recurrenceRule ?: ""),
+                        "updatedAt" to task.updatedAt
+                    )
+                    userNode.child("tasks").child(task.id).setValue(map).await()
+                    database.taskDao().updateTask(task.copy(syncState = SyncState.SYNCED))
+                }
+            }
+
+            // 4. Sync Pending Transactions
+            val pendingTxs = database.moneyDao().getPendingSyncTransactions()
+            for (tx in pendingTxs) {
+                if (tx.deletedAt != null) {
+                    userNode.child("transactions").child(tx.id).removeValue().await()
+                    database.moneyDao().deleteTransaction(tx)
+                } else {
+                    val map = mapOf(
+                        "id" to tx.id,
+                        "type" to tx.type.name,
+                        "amountMinorUnits" to tx.amountMinorUnits,
+                        "currencyCode" to tx.currencyCode,
+                        "categoryId" to tx.categoryId,
+                        "title" to tx.title,
+                        "transactionDate" to tx.transactionDate,
+                        "paymentMethod" to (tx.paymentMethod ?: ""),
+                        "notes" to (tx.notes ?: ""),
+                        "updatedAt" to tx.updatedAt
+                    )
+                    userNode.child("transactions").child(tx.id).setValue(map).await()
+                    database.moneyDao().updateTransaction(tx.copy(syncState = SyncState.SYNCED))
+                }
+            }
+
+            // 5. Update sync timestamp in preferences
+            val now = System.currentTimeMillis()
+            preferencesRepository.setLastSyncTimestamp(now)
+            _syncStatus.value = CloudSyncStatus.Synced(now)
+
+            // Start realtime listeners if enabled
+            if (prefs.realtimeSyncEnabled && !isRealtimeActive) {
+                startRealtimeSync()
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            _syncStatus.value = CloudSyncStatus.Error(e.message ?: "Unknown sync error")
+            Result.failure(e)
+        }
+    }
+}

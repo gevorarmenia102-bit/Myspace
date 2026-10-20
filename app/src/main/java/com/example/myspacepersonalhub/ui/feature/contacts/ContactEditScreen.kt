@@ -1,0 +1,528 @@
+package com.example.myspacepersonalhub.ui.feature.contacts
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.myspacepersonalhub.core.database.entity.ContactEntity
+import com.example.myspacepersonalhub.core.model.PhoneNumber
+import com.example.myspacepersonalhub.theme.*
+import com.example.myspacepersonalhub.ui.components.ConfirmationDialog
+import com.example.myspacepersonalhub.ui.components.FullImageViewerDialog
+import com.example.myspacepersonalhub.ui.components.InitialAvatar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.File
+import java.util.UUID
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContactEditScreen(
+    contactId: String?,
+    viewModel: ContactsViewModel,
+    onBackClick: () -> Unit,
+    onSaveSuccess: () -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val isEditMode = contactId != null && contactId != "new"
+    val existingContactFlow = remember(contactId) {
+        if (isEditMode) viewModel.getContactById(contactId!!) else kotlinx.coroutines.flow.flowOf(null)
+    }
+    val existingContact by existingContactFlow.collectAsState(initial = null)
+
+    var displayName by remember { mutableStateOf("") }
+    var givenName by remember { mutableStateOf("") }
+    var familyName by remember { mutableStateOf("") }
+    var nickname by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var phoneNumbers by remember { mutableStateOf(listOf(PhoneNumber(number = "", label = "Mobile"))) }
+    var profileImageLocalPath by remember { mutableStateOf<String?>(null) }
+    var company by remember { mutableStateOf("") }
+    var jobTitle by remember { mutableStateOf("") }
+    var birthday by remember { mutableStateOf("") }
+    var addressLine1 by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf("") }
+    var region by remember { mutableStateOf("") }
+    var postalCode by remember { mutableStateOf("") }
+    var country by remember { mutableStateOf("") }
+    var tagsInput by remember { mutableStateOf("") }
+    var personalNotes by remember { mutableStateOf("") }
+    var isFavorite by remember { mutableStateOf(false) }
+    var isPinned by remember { mutableStateOf(false) }
+
+    var displayNameError by remember { mutableStateOf<String?>(null) }
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showFullPhotoDialog by remember { mutableStateOf(false) }
+    var isLoaded by remember { mutableStateOf(false) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { sourceUri ->
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val avatarDir = File(context.filesDir, "avatars").apply { mkdirs() }
+                    val destFile = File(avatarDir, "avatar_${UUID.randomUUID()}.jpg")
+                    context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                        val original = BitmapFactory.decodeStream(input)
+                        if (original != null) {
+                            val maxDim = 1024
+                            val scaled = if (original.width > maxDim || original.height > maxDim) {
+                                val ratio = original.width.toFloat() / original.height.toFloat()
+                                val (w, h) = if (ratio > 1f) maxDim to (maxDim / ratio).toInt() else (maxDim * ratio).toInt() to maxDim
+                                Bitmap.createScaledBitmap(original, w, h, true)
+                            } else original
+
+                            destFile.outputStream().use { out ->
+                                scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                            }
+                            profileImageLocalPath = destFile.absolutePath
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    // Populate existing values
+    LaunchedEffect(existingContact) {
+        existingContact?.let { c ->
+            if (!isLoaded) {
+                displayName = c.displayName
+                givenName = c.givenName ?: ""
+                familyName = c.familyName ?: ""
+                nickname = c.nickname ?: ""
+                email = c.email ?: ""
+                phoneNumbers = if (c.phoneNumbers.isNotEmpty()) c.phoneNumbers else listOf(PhoneNumber(number = "", label = "Mobile"))
+                profileImageLocalPath = c.profileImageLocalPath
+                company = c.company ?: ""
+                jobTitle = c.jobTitle ?: ""
+                birthday = c.birthday ?: ""
+                addressLine1 = c.addressLine1 ?: ""
+                city = c.city ?: ""
+                region = c.region ?: ""
+                postalCode = c.postalCode ?: ""
+                country = c.country ?: ""
+                tagsInput = c.tags.joinToString(", ")
+                personalNotes = c.personalNotes ?: ""
+                isFavorite = c.isFavorite
+                isPinned = c.isPinned
+                isLoaded = true
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (isEditMode) "Edit Contact" else "New Contact", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    }
+                },
+                actions = {
+                    if (isEditMode) {
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AccentRed)
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            if (displayName.trim().isBlank()) {
+                                displayNameError = "Display name is required"
+                                return@Button
+                            } else {
+                                displayNameError = null
+                            }
+
+                            if (email.isNotBlank() && !email.contains("@")) {
+                                emailError = "Invalid email format"
+                                return@Button
+                            } else {
+                                emailError = null
+                            }
+
+                            val cleanPhones = phoneNumbers
+                                .map { it.copy(number = it.number.trim()) }
+                                .filter { it.number.isNotBlank() }
+
+                            val parsedTags = tagsInput.split(",")
+                                .map { it.trim().removePrefix("#") }
+                                .filter { it.isNotBlank() }
+
+                            val contactToSave = ContactEntity(
+                                id = if (isEditMode) contactId!! else UUID.randomUUID().toString(),
+                                displayName = displayName.trim(),
+                                givenName = givenName.trim().ifBlank { null },
+                                familyName = familyName.trim().ifBlank { null },
+                                nickname = nickname.trim().ifBlank { null },
+                                email = email.trim().ifBlank { null },
+                                phoneNumbers = cleanPhones,
+                                profileImageLocalPath = profileImageLocalPath,
+                                addressLine1 = addressLine1.trim().ifBlank { null },
+                                city = city.trim().ifBlank { null },
+                                region = region.trim().ifBlank { null },
+                                postalCode = postalCode.trim().ifBlank { null },
+                                country = country.trim().ifBlank { null },
+                                company = company.trim().ifBlank { null },
+                                jobTitle = jobTitle.trim().ifBlank { null },
+                                birthday = birthday.trim().ifBlank { null },
+                                tags = parsedTags,
+                                personalNotes = personalNotes.trim().ifBlank { null },
+                                isFavorite = isFavorite,
+                                isPinned = isPinned,
+                                createdAt = existingContact?.createdAt ?: System.currentTimeMillis()
+                            )
+
+                            viewModel.saveContact(
+                                contact = contactToSave,
+                                onSuccess = onSaveSuccess,
+                                onError = { displayNameError = it }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Photo & Avatar Picker Section
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        InitialAvatar(
+                            name = displayName.ifBlank { "?" },
+                            imagePath = profileImageLocalPath,
+                            size = 100.dp,
+                            onClick = {
+                                if (!profileImageLocalPath.isNullOrBlank()) {
+                                    showFullPhotoDialog = true
+                                } else {
+                                    photoPickerLauncher.launch("image/*")
+                                }
+                            }
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                                .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
+                                .clickable { photoPickerLauncher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = "Pick Photo",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = { photoPickerLauncher.launch("image/*") },
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (profileImageLocalPath.isNullOrBlank()) "Set Photo" else "Change Photo", fontSize = 13.sp)
+                        }
+
+                        if (!profileImageLocalPath.isNullOrBlank()) {
+                            TextButton(
+                                onClick = { profileImageLocalPath = null },
+                                colors = ButtonDefaults.textButtonColors(contentColor = AccentRed)
+                            ) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Remove", fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showFullPhotoDialog && !profileImageLocalPath.isNullOrBlank()) {
+                FullImageViewerDialog(
+                    imagePath = profileImageLocalPath,
+                    name = displayName.ifBlank { "Contact Photo" },
+                    onDismiss = { showFullPhotoDialog = false }
+                )
+            }
+
+            // Basic Info Section
+            Text("BASIC INFORMATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+
+            OutlinedTextField(
+                value = displayName,
+                onValueChange = {
+                    displayName = it
+                    if (it.isNotBlank()) displayNameError = null
+                },
+                label = { Text("Display Name *") },
+                isError = displayNameError != null,
+                supportingText = displayNameError?.let { { Text(it, color = AccentRed) } },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = givenName,
+                    onValueChange = { givenName = it },
+                    label = { Text("First Name") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = familyName,
+                    onValueChange = { familyName = it },
+                    label = { Text("Last Name") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            OutlinedTextField(
+                value = nickname,
+                onValueChange = { nickname = it },
+                label = { Text("Nickname") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            // Phone Numbers Section
+            Text("PHONE NUMBERS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+
+            phoneNumbers.forEachIndexed { index, phone ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = phone.number,
+                        onValueChange = { newNum ->
+                            val updated = phoneNumbers.toMutableList()
+                            updated[index] = phone.copy(number = newNum)
+                            phoneNumbers = updated
+                        },
+                        label = { Text("Phone (${phone.label})") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    IconButton(
+                        onClick = {
+                            if (phoneNumbers.size > 1) {
+                                phoneNumbers = phoneNumbers.filterIndexed { i, _ -> i != index }
+                            } else {
+                                phoneNumbers = listOf(phone.copy(number = ""))
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.RemoveCircleOutline, contentDescription = "Remove", tint = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+
+            TextButton(
+                onClick = { phoneNumbers = phoneNumbers + PhoneNumber(number = "", label = "Mobile") }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Add Another Phone Number")
+            }
+
+            // Email Section
+            Text("EMAIL ADDRESS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = email,
+                onValueChange = {
+                    email = it
+                    if (emailError != null) emailError = null
+                },
+                label = { Text("Email (Optional)") },
+                isError = emailError != null,
+                supportingText = emailError?.let { { Text(it, color = AccentRed) } },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            // Company & Work
+            Text("ORGANIZATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = company,
+                    onValueChange = { company = it },
+                    label = { Text("Company") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = jobTitle,
+                    onValueChange = { jobTitle = it },
+                    label = { Text("Job Title") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            // Address
+            Text("ADDRESS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = addressLine1,
+                onValueChange = { addressLine1 = it },
+                label = { Text("Street Address (e.g. Amerikyan St 102)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = city,
+                    onValueChange = { city = it },
+                    label = { Text("City (e.g. Yerevan)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = country,
+                    onValueChange = { country = it },
+                    label = { Text("Country (e.g. Armenia)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            // Birthday & Tags
+            Text("DATES & TAGS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = birthday,
+                onValueChange = { birthday = it },
+                label = { Text("Birthday (e.g. 1995-08-24)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            OutlinedTextField(
+                value = tagsInput,
+                onValueChange = { tagsInput = it },
+                label = { Text("Tags (comma separated, e.g. friend, work)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            // Personal Notes
+            Text("PERSONAL NOTES", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = personalNotes,
+                onValueChange = { personalNotes = it },
+                label = { Text("Private Notes (Treat as confidential)") },
+                minLines = 3,
+                maxLines = 6,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            // Toggles
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Pin to Top of List", fontWeight = FontWeight.Medium)
+                Switch(checked = isPinned, onCheckedChange = { isPinned = it })
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Mark as Favorite", fontWeight = FontWeight.Medium)
+                Switch(checked = isFavorite, onCheckedChange = { isFavorite = it })
+            }
+
+            Spacer(modifier = Modifier.height(60.dp))
+        }
+    }
+
+    if (showDeleteConfirm) {
+        ConfirmationDialog(
+            title = "Delete Contact",
+            message = "Are you sure you want to permanently delete this contact?",
+            confirmLabel = "Delete",
+            isDestructive = true,
+            onConfirm = {
+                contactId?.let { viewModel.deleteContact(it) }
+                onSaveSuccess()
+            },
+            onDismiss = { showDeleteConfirm = false }
+        )
+    }
+}
