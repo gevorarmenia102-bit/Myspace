@@ -32,7 +32,7 @@ interface ContactDao {
     @Query("SELECT * FROM contacts WHERE id = :id")
     suspend fun getContactByIdDirect(id: String): ContactEntity?
 
-    @Query("SELECT * FROM contacts WHERE syncState != 'SYNCED'")
+    @Query("SELECT * FROM contacts WHERE syncState != 'SYNCED' OR (deletedAt IS NULL AND profileImageLocalPath IS NOT NULL AND (profileImageStoragePath IS NULL OR profileImageStoragePath = ''))")
     suspend fun getPendingSyncContacts(): List<ContactEntity>
 
     @Query("SELECT COUNT(*) FROM contacts WHERE deletedAt IS NULL")

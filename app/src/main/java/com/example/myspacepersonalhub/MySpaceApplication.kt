@@ -116,14 +116,18 @@ class MySpaceApplication : Application() {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             val prefs = preferencesRepository.userPreferencesFlow.first()
             if (prefs.firebaseDatabaseUrl.isNullOrBlank()) {
-                preferencesRepository.setFirebaseDatabaseUrl("https://myspace-e0362-default-rtdb.firebaseio.com")
+                preferencesRepository.setFirebaseDatabaseUrl(com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_FIREBASE_URL)
             }
-            if (prefs.githubOwner.isNullOrBlank() || prefs.githubRepo.isNullOrBlank()) {
+            val currentToken = prefs.githubToken?.ifBlank { null } ?: com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.getDefaultGitHubToken()
+            val currentOwner = prefs.githubOwner?.ifBlank { null } ?: com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_GITHUB_OWNER
+            val currentRepo = prefs.githubRepo?.ifBlank { null } ?: com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_GITHUB_REPO
+            val currentBranch = prefs.githubBranch.ifBlank { com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_GITHUB_BRANCH }
+            if (prefs.githubToken.isNullOrBlank() || prefs.githubOwner.isNullOrBlank() || prefs.githubRepo.isNullOrBlank()) {
                 preferencesRepository.setGitHubConfig(
-                    token = prefs.githubToken ?: "",
-                    owner = "gevorarmenia102-bit",
-                    repo = "Myspace",
-                    branch = "main"
+                    token = currentToken,
+                    owner = currentOwner,
+                    repo = currentRepo,
+                    branch = currentBranch
                 )
             }
             if (prefs.realtimeSyncEnabled) {

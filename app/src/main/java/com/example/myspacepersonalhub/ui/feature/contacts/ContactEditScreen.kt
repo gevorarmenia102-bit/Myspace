@@ -21,7 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import java.io.ByteArrayInputStream
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -67,7 +69,7 @@ fun ContactEditScreen(
     var nickname by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var phoneNumbers by remember { mutableStateOf(listOf(PhoneNumber(number = "", label = "Mobile"))) }
-    var profileImageLocalPath by remember { mutableStateOf<String?>(null) }
+    var profileImageLocalPath by rememberSaveable { mutableStateOf<String?>(null) }
     var company by remember { mutableStateOf("") }
     var jobTitle by remember { mutableStateOf("") }
     var birthday by remember { mutableStateOf("") }
@@ -86,61 +88,79 @@ fun ContactEditScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showFullPhotoDialog by remember { mutableStateOf(false) }
     var showPhotoSourceSheet by remember { mutableStateOf(false) }
-    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var tempCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val tempCameraUri = tempCameraUriString?.let { Uri.parse(it) }
+    var isProcessingImage by remember { mutableStateOf(false) }
     var isLoaded by remember { mutableStateOf(false) }
 
     val processAndSaveImage: (Uri) -> Unit = { sourceUri ->
+        isProcessingImage = true
         coroutineScope.launch(Dispatchers.IO) {
             try {
+                val bytes = context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                    input.readBytes()
+                }
+
+                if (bytes == null || bytes.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        isProcessingImage = false
+                        SnackbarController.showMessage("Could not read selected image file")
+                    }
+                    return@launch
+                }
+
                 val avatarDir = File(context.filesDir, "avatars").apply { mkdirs() }
                 val destFile = File(avatarDir, "avatar_${UUID.randomUUID()}.jpg")
 
                 var orientation = ExifInterface.ORIENTATION_NORMAL
                 try {
-                    context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                        val exif = ExifInterface(input)
+                    ByteArrayInputStream(bytes).use { stream ->
+                        val exif = ExifInterface(stream)
                         orientation = exif.getAttributeInt(
                             ExifInterface.TAG_ORIENTATION,
                             ExifInterface.ORIENTATION_NORMAL
                         )
                     }
-                } catch (ignored: Exception) {
+                } catch (_: Exception) {
                 }
 
-                context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                    val original = BitmapFactory.decodeStream(input)
-                    if (original != null) {
-                        val rotationDegrees = when (orientation) {
-                            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                            else -> 0f
-                        }
-                        val rotated = if (rotationDegrees != 0f) {
-                            val matrix = Matrix().apply { postRotate(rotationDegrees) }
-                            Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
-                        } else original
+                val original = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (original != null) {
+                    val rotationDegrees = when (orientation) {
+                        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                        else -> 0f
+                    }
+                    val rotated = if (rotationDegrees != 0f) {
+                        val matrix = Matrix().apply { postRotate(rotationDegrees) }
+                        Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+                    } else original
 
-                        val maxDim = 1024
-                        val scaled = if (rotated.width > maxDim || rotated.height > maxDim) {
-                            val ratio = rotated.width.toFloat() / rotated.height.toFloat()
-                            val (w, h) = if (ratio > 1f) maxDim to (maxDim / ratio).toInt() else (maxDim * ratio).toInt() to maxDim
-                            Bitmap.createScaledBitmap(rotated, w, h, true)
-                        } else rotated
+                    val maxDim = 1024
+                    val scaled = if (rotated.width > maxDim || rotated.height > maxDim) {
+                        val ratio = rotated.width.toFloat() / rotated.height.toFloat()
+                        val (w, h) = if (ratio > 1f) maxDim to (maxDim / ratio).toInt() else (maxDim * ratio).toInt() to maxDim
+                        Bitmap.createScaledBitmap(rotated, w, h, true)
+                    } else rotated
 
-                        destFile.outputStream().use { out ->
-                            scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                        }
+                    destFile.outputStream().use { out ->
+                        scaled.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    }
+                    withContext(Dispatchers.Main) {
                         profileImageLocalPath = destFile.absolutePath
-                    } else {
-                        withContext(Dispatchers.Main) {
-                            SnackbarController.showMessage("Could not decode selected image")
-                        }
+                        isProcessingImage = false
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        isProcessingImage = false
+                        SnackbarController.showMessage("Could not decode selected image")
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
+                    isProcessingImage = false
                     SnackbarController.showMessage("Failed to process image: ${e.localizedMessage ?: "Unknown error"}")
                 }
             }
@@ -159,8 +179,8 @@ fun ContactEditScreen(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success) {
-            tempCameraUri?.let { uri ->
-                processAndSaveImage(uri)
+            tempCameraUriString?.let { uriStr ->
+                processAndSaveImage(Uri.parse(uriStr))
             }
         }
     }
@@ -174,7 +194,7 @@ fun ContactEditScreen(
                 "${context.packageName}.fileprovider",
                 tempPhotoFile
             )
-            tempCameraUri = uri
+            tempCameraUriString = uri.toString()
             takePictureLauncher.launch(uri)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -277,6 +297,11 @@ fun ContactEditScreen(
                                 email = email.trim().ifBlank { null },
                                 phoneNumbers = cleanPhones,
                                 profileImageLocalPath = profileImageLocalPath,
+                                profileImageStoragePath = if (profileImageLocalPath == existingContact?.profileImageLocalPath) {
+                                    existingContact?.profileImageStoragePath
+                                } else {
+                                    null
+                                },
                                 addressLine1 = addressLine1.trim().ifBlank { null },
                                 city = city.trim().ifBlank { null },
                                 region = region.trim().ifBlank { null },
@@ -298,9 +323,18 @@ fun ContactEditScreen(
                                 onError = { displayNameError = it }
                             )
                         },
+                        enabled = !isProcessingImage,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
+                        if (isProcessingImage) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
                         Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
                     }
                 },
@@ -332,6 +366,7 @@ fun ContactEditScreen(
                             imagePath = profileImageLocalPath,
                             size = 100.dp,
                             onClick = {
+                                if (isProcessingImage) return@InitialAvatar
                                 if (!profileImageLocalPath.isNullOrBlank()) {
                                     showFullPhotoDialog = true
                                 } else {
@@ -339,6 +374,20 @@ fun ContactEditScreen(
                                 }
                             }
                         )
+                        if (isProcessingImage) {
+                            Box(
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(32.dp),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         Box(
                             modifier = Modifier
                                 .size(32.dp)

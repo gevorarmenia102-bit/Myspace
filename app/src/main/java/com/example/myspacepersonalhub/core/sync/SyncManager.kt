@@ -349,13 +349,17 @@ class SyncManager(
                     val avatarFile = File(File(context.filesDir, "avatars"), "avatar_${id}.jpg")
                     if (!avatarFile.exists() || avatarFile.length() == 0L) {
                         val prefs = preferencesRepository.userPreferencesFlow.first()
+                        val dlToken = prefs.githubToken?.ifBlank { null } ?: DefaultCloudConfig.getDefaultGitHubToken()
+                        val dlOwner = prefs.githubOwner?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_OWNER
+                        val dlRepo = prefs.githubRepo?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_REPO
+                        val dlBranch = prefs.githubBranch.ifBlank { DefaultCloudConfig.DEFAULT_GITHUB_BRANCH }
                         val dlResult = gitHubStorageManager.downloadFile(
                             urlOrPath = profileImageStoragePath,
                             destinationFile = avatarFile,
-                            token = prefs.githubToken,
-                            owner = prefs.githubOwner,
-                            repo = prefs.githubRepo,
-                            branch = prefs.githubBranch
+                            token = dlToken,
+                            owner = dlOwner,
+                            repo = dlRepo,
+                            branch = dlBranch
                         )
                         if (dlResult.isSuccess) {
                             localAvatarPath = avatarFile.absolutePath
@@ -588,6 +592,10 @@ class SyncManager(
         try {
             _syncStatus.value = CloudSyncStatus.Syncing("Pushing pending changes...")
             val prefs = preferencesRepository.userPreferencesFlow.first()
+            val effectiveToken = prefs.githubToken?.ifBlank { null } ?: DefaultCloudConfig.getDefaultGitHubToken()
+            val effectiveOwner = prefs.githubOwner?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_OWNER
+            val effectiveRepo = prefs.githubRepo?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_REPO
+            val effectiveBranch = prefs.githubBranch.ifBlank { DefaultCloudConfig.DEFAULT_GITHUB_BRANCH }
             val userNode = db.reference.child("users").child(uid)
 
             // 1. Sync Pending Contacts (Large files -> GitHub, Text -> Firebase)
@@ -596,14 +604,14 @@ class SyncManager(
                 if (contact.deletedAt != null) {
                     userNode.child("contacts").child(contact.id).removeValue().await()
                     // Delete avatar from GitHub if configured
-                    if (!contact.profileImageStoragePath.isNullOrBlank() && !prefs.githubToken.isNullOrBlank()) {
+                    if (!contact.profileImageStoragePath.isNullOrBlank() && !effectiveToken.isNullOrBlank()) {
                         gitHubStorageManager.deleteFile(
                             path = "media/avatars/avatar_${contact.id}.jpg",
                             commitMessage = "Delete avatar for contact ${contact.id}",
-                            token = prefs.githubToken,
-                            owner = prefs.githubOwner ?: "",
-                            repo = prefs.githubRepo ?: "",
-                            branch = prefs.githubBranch
+                            token = effectiveToken,
+                            owner = effectiveOwner,
+                            repo = effectiveRepo,
+                            branch = effectiveBranch
                         )
                     }
                     database.contactDao().deleteContact(contact)
@@ -611,20 +619,23 @@ class SyncManager(
                     var updatedStoragePath = contact.profileImageStoragePath
 
                     // If contact has a local avatar not yet in GitHub and GitHub is configured:
-                    if (!contact.profileImageLocalPath.isNullOrBlank() && updatedStoragePath.isNullOrBlank() && !prefs.githubToken.isNullOrBlank()) {
+                    if (!contact.profileImageLocalPath.isNullOrBlank() && updatedStoragePath.isNullOrBlank() && !effectiveToken.isNullOrBlank()) {
                         val localFile = File(contact.profileImageLocalPath)
                         if (localFile.exists() && localFile.length() > 0L) {
                             val uploadRes = gitHubStorageManager.uploadFile(
                                 path = "media/avatars/avatar_${contact.id}.jpg",
                                 bytes = localFile.readBytes(),
                                 commitMessage = "Upload avatar for ${contact.displayName}",
-                                token = prefs.githubToken,
-                                owner = prefs.githubOwner ?: "",
-                                repo = prefs.githubRepo ?: "",
-                                branch = prefs.githubBranch
+                                token = effectiveToken,
+                                owner = effectiveOwner,
+                                repo = effectiveRepo,
+                                branch = effectiveBranch
                             )
                             if (uploadRes.isSuccess) {
-                                updatedStoragePath = uploadRes.getOrNull()?.downloadUrl
+                                val res = uploadRes.getOrNull()
+                                updatedStoragePath = res?.downloadUrl?.ifBlank { null } ?: res?.rawUrl
+                            } else {
+                                Log.w(TAG, "Failed to upload avatar for contact ${contact.id}: ${uploadRes.exceptionOrNull()?.message}")
                             }
                         }
                     }
@@ -658,10 +669,12 @@ class SyncManager(
                         "updatedAt" to contact.updatedAt
                     )
                     userNode.child("contacts").child(contact.id).setValue(map).await()
+
+                    val isAvatarSynced = contact.profileImageLocalPath.isNullOrBlank() || !updatedStoragePath.isNullOrBlank()
                     database.contactDao().updateContact(
                         contact.copy(
                             profileImageStoragePath = updatedStoragePath,
-                            syncState = SyncState.SYNCED
+                            syncState = if (isAvatarSynced) SyncState.SYNCED else SyncState.PENDING_UPDATE
                         )
                     )
                 }
