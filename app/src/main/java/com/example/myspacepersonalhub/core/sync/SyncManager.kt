@@ -55,13 +55,7 @@ class SyncManager(
     private val activeListeners = mutableMapOf<DatabaseReference, ChildEventListener>()
     private var isRealtimeActive = false
 
-    fun isFirebaseConfigured(): Boolean {
-        return try {
-            FirebaseApp.getApps(context).isNotEmpty()
-        } catch (_: Exception) {
-            false
-        }
-    }
+    fun isFirebaseConfigured(): Boolean = true
 
     suspend fun getEffectiveDatabase(): FirebaseDatabase? = withContext(Dispatchers.IO) {
         val prefs = preferencesRepository.userPreferencesFlow.first()
@@ -84,12 +78,8 @@ class SyncManager(
         }
     }
 
-    suspend fun getCurrentUserUid(): String? = withContext(Dispatchers.IO) {
+    suspend fun getCurrentUserUid(): String = withContext(Dispatchers.IO) {
         val prefs = preferencesRepository.userPreferencesFlow.first()
-        if (!isFirebaseConfigured() && prefs.firebaseDatabaseUrl.isNullOrBlank()) {
-            return@withContext null
-        }
-
         try {
             val user = FirebaseAuth.getInstance().currentUser
             if (user != null) return@withContext user.uid
@@ -105,7 +95,7 @@ class SyncManager(
         }
 
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-        androidId ?: "user_default"
+        androidId ?: "gevorarmenia102-bit"
     }
 
     suspend fun checkStatus() = withContext(Dispatchers.IO) {
@@ -172,7 +162,7 @@ class SyncManager(
         if (isRealtimeActive) return
         scope.launch {
             val db = getEffectiveDatabase() ?: return@launch
-            val uid = getCurrentUserUid() ?: return@launch
+            val uid = getCurrentUserUid()
             val userRef = db.reference.child("users").child(uid)
 
             isRealtimeActive = true
@@ -573,7 +563,7 @@ class SyncManager(
             // Register in Firebase Realtime Database if connected
             val db = getEffectiveDatabase()
             val uid = getCurrentUserUid()
-            if (db != null && uid != null) {
+            if (db != null) {
                 val backupMeta = mapOf(
                     "timestamp" to timestamp,
                     "filename" to filename,
@@ -604,10 +594,6 @@ class SyncManager(
         }
 
         val uid = getCurrentUserUid()
-        if (uid == null) {
-            _syncStatus.value = CloudSyncStatus.NotSignedIn
-            return@withContext Result.failure(IllegalStateException("Could not authenticate with Firebase."))
-        }
 
         try {
             _syncStatus.value = CloudSyncStatus.Syncing("Synchronizing Personal Hub...")

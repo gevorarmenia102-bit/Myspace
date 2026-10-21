@@ -16,7 +16,7 @@ class SyncWorker(
         val preferences = UserPreferencesRepository(applicationContext)
         val syncManager = SyncManager(applicationContext, database, preferences)
 
-        if (!syncManager.isFirebaseConfigured() || syncManager.getCurrentUserUid() == null) {
+        if (!syncManager.isFirebaseConfigured()) {
             return Result.success()
         }
 

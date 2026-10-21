@@ -1,5 +1,6 @@
 package com.example.myspacepersonalhub.ui.feature.dashboard
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
@@ -9,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -34,10 +36,12 @@ import com.example.myspacepersonalhub.core.database.entity.ContactEntity
 import com.example.myspacepersonalhub.core.database.entity.NoteEntity
 import com.example.myspacepersonalhub.core.database.entity.TaskEntity
 import com.example.myspacepersonalhub.core.model.Priority
+import com.example.myspacepersonalhub.core.sync.CloudSyncStatus
 import com.example.myspacepersonalhub.core.util.CurrencyUtils
 import com.example.myspacepersonalhub.navigation.Screen
 import com.example.myspacepersonalhub.theme.*
 import com.example.myspacepersonalhub.ui.components.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +57,27 @@ fun DashboardScreen(
     val state by viewModel.uiState.collectAsState()
     val secretTrigger = rememberSecretCloudTrigger(targetClicks = 15)
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    val isSyncing = state.isLoading || state.syncStatus is CloudSyncStatus.Syncing
+    val infiniteTransition = rememberInfiniteTransition(label = "refresh_spin")
+    val rotationAngle by if (isSyncing) {
+        infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "spin_angle"
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             // Sleek Top App Bar with Branding and Sync Badge
             Row(
@@ -93,10 +116,59 @@ fun DashboardScreen(
                     )
                 }
 
-                SyncStatusBadge(
-                    status = state.syncStatus,
-                    onSyncClick = { viewModel.syncNow() }
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Dedicated Realtime Refresh Button
+                    Surface(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable {
+                                viewModel.syncNow()
+                                coroutineScope.launch {
+                                    snackbarHostState.currentSnackbarData?.dismiss()
+                                    snackbarHostState.showSnackbar(
+                                        message = "Syncing Realtime Hub...",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .padding(6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Realtime Data",
+                                tint = if (isSyncing) AccentBlue else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .graphicsLayer { rotationZ = rotationAngle }
+                            )
+                        }
+                    }
+
+                    SyncStatusBadge(
+                        status = state.syncStatus,
+                        onSyncClick = {
+                            viewModel.syncNow()
+                            coroutineScope.launch {
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                                snackbarHostState.showSnackbar(
+                                    message = "Syncing Realtime Hub...",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
+                        }
+                    )
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background

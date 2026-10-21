@@ -117,7 +117,13 @@ class DashboardViewModel(
 
     fun syncNow() {
         viewModelScope.launch {
-            syncManager.syncNow()
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                syncManager.startRealtimeSync()
+                syncManager.syncNow()
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
+            }
         }
     }
 
