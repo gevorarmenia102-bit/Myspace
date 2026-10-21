@@ -111,4 +111,7 @@ dependencies {
 
   // OkHttp for GitHub REST API & Big File Transfer
   implementation(libs.okhttp)
+
+  // Google libphonenumber for phone formatting & validation
+  implementation(libs.google.libphonenumber)
 }

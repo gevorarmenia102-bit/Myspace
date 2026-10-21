@@ -20,6 +20,8 @@ val AccentBlue = Color(0xFF38BDF8)
 val AccentPurple = Color(0xFFA855F7)
 val AccentAmber = Color(0xFFF59E0B)
 val AccentRed = Color(0xFFEF4444)
+val AccentWhatsApp = Color(0xFF25D366)
+val AccentTelegram = Color(0xFF24A1DE)
 
 // Light Theme Palette
 val LightBackground = Color(0xFFF8FAFC)

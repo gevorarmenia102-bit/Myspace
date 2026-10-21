@@ -33,10 +33,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.BorderStroke
 import com.example.myspacepersonalhub.core.database.entity.ContactEntity
 import com.example.myspacepersonalhub.core.model.PhoneNumber
+import com.example.myspacepersonalhub.core.util.CallerIdService
+import com.example.myspacepersonalhub.core.util.CountryInfo
+import com.example.myspacepersonalhub.core.util.CountryPhoneHelper
+import com.example.myspacepersonalhub.core.util.IntentUtils
 import com.example.myspacepersonalhub.theme.*
 import com.example.myspacepersonalhub.ui.components.ConfirmationDialog
+import com.example.myspacepersonalhub.ui.components.CountryPickerBottomSheet
 import com.example.myspacepersonalhub.ui.components.FullImageViewerDialog
 import com.example.myspacepersonalhub.ui.components.InitialAvatar
 import com.example.myspacepersonalhub.core.util.SnackbarController
@@ -92,6 +98,8 @@ fun ContactEditScreen(
     val tempCameraUri = tempCameraUriString?.let { Uri.parse(it) }
     var isProcessingImage by remember { mutableStateOf(false) }
     var isLoaded by remember { mutableStateOf(false) }
+    var showCountryPickerForIndex by remember { mutableStateOf<Int?>(null) }
+    var isLookingUpCallerId by remember { mutableStateOf(false) }
 
     val processAndSaveImage: (Uri) -> Unit = { sourceUri ->
         isProcessingImage = true
@@ -490,36 +498,201 @@ fun ContactEditScreen(
             Text("PHONE NUMBERS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
 
             phoneNumbers.forEachIndexed { index, phone ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = phone.number,
-                        onValueChange = { newNum ->
-                            val updated = phoneNumbers.toMutableList()
-                            updated[index] = phone.copy(number = newNum)
-                            phoneNumbers = updated
-                        },
-                        label = { Text("Phone (${phone.label})") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                val detectedCountry = remember(phone.number) {
+                    CountryPhoneHelper.detectCountry(phone.number) ?: CountryPhoneHelper.defaultCountry()
+                }
 
-                    IconButton(
-                        onClick = {
-                            if (phoneNumbers.size > 1) {
-                                phoneNumbers = phoneNumbers.filterIndexed { i, _ -> i != index }
-                            } else {
-                                phoneNumbers = listOf(phone.copy(number = ""))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Country Selector Button with Flag and Dial Code
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { showCountryPickerForIndex = index }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp)
+                                ) {
+                                    Text(detectedCountry.flag, fontSize = 22.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        detectedCountry.dialCode,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Icon(
+                                        Icons.Default.ArrowDropDown,
+                                        contentDescription = "Select country",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            // Phone Number TextField with As-You-Type Formatting
+                            OutlinedTextField(
+                                value = phone.number,
+                                onValueChange = { newNum ->
+                                    val detected = CountryPhoneHelper.detectCountry(newNum)
+                                    val iso = detected?.iso2 ?: detectedCountry.iso2
+                                    val formatted = CountryPhoneHelper.formatAsYouType(newNum, iso)
+                                    val updated = phoneNumbers.toMutableList()
+                                    updated[index] = phone.copy(number = formatted)
+                                    phoneNumbers = updated
+                                },
+                                label = { Text(detectedCountry.name) },
+                                placeholder = { Text(detectedCountry.sampleFormat) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+
+                            // Remove button
+                            IconButton(
+                                onClick = {
+                                    if (phoneNumbers.size > 1) {
+                                        phoneNumbers = phoneNumbers.filterIndexed { i, _ -> i != index }
+                                    } else {
+                                        phoneNumbers = listOf(phone.copy(number = ""))
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.RemoveCircleOutline,
+                                    contentDescription = "Remove",
+                                    tint = MaterialTheme.colorScheme.outline
+                                )
                             }
                         }
-                    ) {
-                        Icon(Icons.Default.RemoveCircleOutline, contentDescription = "Remove", tint = MaterialTheme.colorScheme.outline)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Actions & Label Row: Auto-fill Name | WhatsApp | Telegram | Label Picker
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Caller ID / Truecaller Auto-Fill Button
+                            val digitCount = phone.number.filter { it.isDigit() }.length
+                            FilledTonalButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        isLookingUpCallerId = true
+                                        val result = CallerIdService.lookupCallerId(
+                                            context = context,
+                                            rawPhone = phone.number,
+                                            countryIso = detectedCountry.iso2
+                                        )
+                                        isLookingUpCallerId = false
+                                        if (result != null) {
+                                            displayName = result.name
+                                            val (first, last) = CallerIdService.splitFullName(result.name)
+                                            if (givenName.isBlank()) givenName = first
+                                            if (familyName.isBlank()) familyName = last
+                                            SnackbarController.showMessage("✨ Auto-filled: ${result.name} (${result.source})")
+                                        } else {
+                                            SnackbarController.showMessage("No name found for ${phone.number}")
+                                        }
+                                    }
+                                },
+                                enabled = digitCount >= 5 && !isLookingUpCallerId,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                if (isLookingUpCallerId) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                } else {
+                                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+                                Text("Auto-fill Name", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val hasDigits = digitCount >= 6
+
+                                // WhatsApp quick launch
+                                IconButton(
+                                    onClick = { IntentUtils.openWhatsApp(context, phone.number) },
+                                    enabled = hasDigits,
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Chat,
+                                        contentDescription = "WhatsApp",
+                                        tint = if (hasDigits) AccentWhatsApp else MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                // Telegram quick launch
+                                IconButton(
+                                    onClick = { IntentUtils.openTelegram(context, phone.number) },
+                                    enabled = hasDigits,
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Send,
+                                        contentDescription = "Telegram",
+                                        tint = if (hasDigits) AccentTelegram else MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                // Label dropdown/selector
+                                var showLabelMenu by remember { mutableStateOf(false) }
+                                Box {
+                                    FilterChip(
+                                        selected = false,
+                                        onClick = { showLabelMenu = true },
+                                        label = { Text(phone.label, fontSize = 11.sp) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    )
+                                    DropdownMenu(
+                                        expanded = showLabelMenu,
+                                        onDismissRequest = { showLabelMenu = false }
+                                    ) {
+                                        listOf("Mobile", "WhatsApp", "Telegram", "Work", "Home", "Main", "Other").forEach { lbl ->
+                                            DropdownMenuItem(
+                                                text = { Text(lbl) },
+                                                onClick = {
+                                                    val updated = phoneNumbers.toMutableList()
+                                                    updated[index] = phone.copy(label = lbl)
+                                                    phoneNumbers = updated
+                                                    showLabelMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             TextButton(
@@ -835,5 +1008,33 @@ fun ContactEditScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
+    }
+
+    if (showCountryPickerForIndex != null) {
+        val targetIdx = showCountryPickerForIndex!!
+        val currentPhone = phoneNumbers.getOrNull(targetIdx)
+        val selectedIso = currentPhone?.let { CountryPhoneHelper.detectCountry(it.number)?.iso2 }
+
+        CountryPickerBottomSheet(
+            selectedIso = selectedIso,
+            onDismissRequest = { showCountryPickerForIndex = null },
+            onCountrySelected = { country ->
+                if (targetIdx in phoneNumbers.indices) {
+                    val p = phoneNumbers[targetIdx]
+                    val oldCountry = CountryPhoneHelper.detectCountry(p.number)
+                    val rawClean = p.number.filter { it.isDigit() || it == '+' }
+                    val digits = if (oldCountry != null && rawClean.startsWith(oldCountry.dialCode)) {
+                        rawClean.removePrefix(oldCountry.dialCode).trim()
+                    } else {
+                        rawClean.removePrefix("+").trimStart('0')
+                    }
+                    val combined = if (digits.isBlank()) "${country.dialCode} " else "${country.dialCode} $digits"
+                    val formatted = CountryPhoneHelper.formatAsYouType(combined, country.iso2)
+                    val updated = phoneNumbers.toMutableList()
+                    updated[targetIdx] = p.copy(number = formatted)
+                    phoneNumbers = updated
+                }
+            }
+        )
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.example.myspacepersonalhub.core.database.entity.ContactEntity
 import com.example.myspacepersonalhub.core.database.entity.fullAddress
 import com.example.myspacepersonalhub.core.database.entity.hasAddress
+import com.example.myspacepersonalhub.core.util.CountryPhoneHelper
 import com.example.myspacepersonalhub.core.util.IntentUtils
 import com.example.myspacepersonalhub.theme.*
 import com.example.myspacepersonalhub.ui.components.*
@@ -163,17 +164,39 @@ fun ContactDetailScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Quick Action Bar: Call, Email, Maps, Share
+                // Quick Action Bar: Call, WhatsApp, Telegram, Email, Maps, Share
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     val primaryPhone = currentContact.phoneNumbers.firstOrNull()?.number
+                    val hasPhone = !primaryPhone.isNullOrBlank()
+
                     QuickActionButton(
                         icon = Icons.Default.Phone,
                         label = "Call",
-                        enabled = !primaryPhone.isNullOrBlank(),
+                        enabled = hasPhone,
                         onClick = { primaryPhone?.let { IntentUtils.openDialer(context, it) } }
+                    )
+
+                    QuickActionButton(
+                        icon = Icons.Default.Chat,
+                        label = "WhatsApp",
+                        enabled = hasPhone,
+                        tint = AccentWhatsApp,
+                        containerColor = AccentWhatsApp.copy(alpha = 0.15f),
+                        onClick = { primaryPhone?.let { IntentUtils.openWhatsApp(context, it) } }
+                    )
+
+                    QuickActionButton(
+                        icon = Icons.Default.Send,
+                        label = "Telegram",
+                        enabled = hasPhone,
+                        tint = AccentTelegram,
+                        containerColor = AccentTelegram.copy(alpha = 0.15f),
+                        onClick = { primaryPhone?.let { IntentUtils.openTelegram(context, it) } }
                     )
 
                     QuickActionButton(
@@ -204,7 +227,10 @@ fun ContactDetailScreen(
                         onClick = {
                             val shareSummary = buildString {
                                 appendLine(currentContact.displayName)
-                                currentContact.phoneNumbers.forEach { appendLine("${it.label}: ${it.number}") }
+                                currentContact.phoneNumbers.forEach {
+                                    val formatted = CountryPhoneHelper.formatDisplay(it.number)
+                                    appendLine("${it.label}: $formatted")
+                                }
                                 currentContact.email?.let { appendLine("Email: $it") }
                                 if (fullAddress.isNotBlank()) appendLine("Address: $fullAddress")
                             }
@@ -219,12 +245,21 @@ fun ContactDetailScreen(
                 if (currentContact.phoneNumbers.isNotEmpty()) {
                     DetailSectionCard(title = "Phone Numbers") {
                         currentContact.phoneNumbers.forEach { phone ->
-                            DetailFieldRow(
+                            val detectedCountry = CountryPhoneHelper.detectCountry(phone.number)
+                            val formattedNumber = CountryPhoneHelper.formatDisplay(phone.number)
+                            val countryFlag = detectedCountry?.flag ?: "🌐"
+                            val countryName = detectedCountry?.name ?: "International"
+
+                            PhoneDetailCardRow(
+                                flag = countryFlag,
+                                countryName = countryName,
                                 label = phone.label,
-                                value = phone.number,
-                                icon = Icons.Default.Phone,
-                                onValueClick = { IntentUtils.openDialer(context, phone.number) },
-                                onCopyClick = { IntentUtils.copyToClipboard(context, "Phone Number", phone.number) }
+                                rawNumber = phone.number,
+                                formattedNumber = formattedNumber,
+                                onCall = { IntentUtils.openDialer(context, phone.number) },
+                                onWhatsApp = { IntentUtils.openWhatsApp(context, phone.number) },
+                                onTelegram = { IntentUtils.openTelegram(context, phone.number) },
+                                onCopy = { IntentUtils.copyToClipboard(context, "Phone Number", phone.number) }
                             )
                         }
                     }
@@ -340,6 +375,8 @@ private fun QuickActionButton(
     icon: ImageVector,
     label: String,
     enabled: Boolean,
+    tint: Color? = null,
+    containerColor: Color? = null,
     onClick: () -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -349,17 +386,108 @@ private fun QuickActionButton(
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(if (enabled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                .background(
+                    if (!enabled) MaterialTheme.colorScheme.surface
+                    else containerColor ?: MaterialTheme.colorScheme.surfaceVariant
+                )
         ) {
             Icon(
                 icon,
                 contentDescription = label,
-                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                tint = if (!enabled) MaterialTheme.colorScheme.outline
+                       else tint ?: MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(22.dp)
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Text(label, fontSize = 11.sp, color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline)
+        Text(
+            label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (enabled) (tint ?: MaterialTheme.colorScheme.onSurfaceVariant) else MaterialTheme.colorScheme.outline
+        )
+    }
+}
+
+@Composable
+private fun PhoneDetailCardRow(
+    flag: String,
+    countryName: String,
+    label: String,
+    rawNumber: String,
+    formattedNumber: String,
+    onCall: () -> Unit,
+    onWhatsApp: () -> Unit,
+    onTelegram: () -> Unit,
+    onCopy: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(flag, fontSize = 26.sp, modifier = Modifier.padding(end = 10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = formattedNumber.ifBlank { rawNumber },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "$countryName • $label",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AssistChip(
+                onClick = onCall,
+                label = { Text("Call", fontSize = 12.sp) },
+                leadingIcon = {
+                    Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                },
+                shape = RoundedCornerShape(8.dp),
+                colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            )
+
+            AssistChip(
+                onClick = onWhatsApp,
+                label = { Text("WhatsApp", fontSize = 12.sp, color = AccentWhatsApp) },
+                leadingIcon = {
+                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentWhatsApp)
+                },
+                shape = RoundedCornerShape(8.dp),
+                colors = AssistChipDefaults.assistChipColors(containerColor = AccentWhatsApp.copy(alpha = 0.12f))
+            )
+
+            AssistChip(
+                onClick = onTelegram,
+                label = { Text("Telegram", fontSize = 12.sp, color = AccentTelegram) },
+                leadingIcon = {
+                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentTelegram)
+                },
+                shape = RoundedCornerShape(8.dp),
+                colors = AssistChipDefaults.assistChipColors(containerColor = AccentTelegram.copy(alpha = 0.12f))
+            )
+
+            IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            }
+        }
+        HorizontalDivider(modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
     }
 }
 

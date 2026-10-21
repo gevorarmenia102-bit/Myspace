@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.example.myspacepersonalhub.core.database.entity.ContactEntity
 import com.example.myspacepersonalhub.core.database.entity.fullAddress
 import com.example.myspacepersonalhub.core.database.entity.hasAddress
+import com.example.myspacepersonalhub.core.util.CountryPhoneHelper
 import com.example.myspacepersonalhub.core.util.IntentUtils
 import com.example.myspacepersonalhub.theme.*
 import com.example.myspacepersonalhub.ui.components.*
@@ -322,11 +323,19 @@ fun ContactItemCard(
                     }
                 }
 
+                val primaryPhone = contact.phoneNumbers.firstOrNull()?.number
+                val formattedPhone = primaryPhone?.let {
+                    val country = CountryPhoneHelper.detectCountry(it)
+                    val flag = country?.flag ?: "📞"
+                    val display = CountryPhoneHelper.formatDisplay(it)
+                    "$flag $display"
+                }
+
                 val subtitle = when {
                     !contact.jobTitle.isNullOrBlank() && !contact.company.isNullOrBlank() ->
                         "${contact.jobTitle} • ${contact.company}"
                     !contact.company.isNullOrBlank() -> contact.company
-                    contact.phoneNumbers.isNotEmpty() -> contact.phoneNumbers.first().number
+                    formattedPhone != null -> formattedPhone
                     !contact.email.isNullOrBlank() -> contact.email
                     else -> null
                 }
@@ -344,6 +353,22 @@ fun ContactItemCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Quick WhatsApp launcher if primary phone is available
+                val primaryPhone = contact.phoneNumbers.firstOrNull()?.number
+                if (!primaryPhone.isNullOrBlank()) {
+                    IconButton(
+                        onClick = { IntentUtils.openWhatsApp(context, primaryPhone) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Chat,
+                            contentDescription = "WhatsApp",
+                            tint = AccentWhatsApp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
                 // Maps Icon beside Star if address is set
                 if (contact.hasAddress()) {
                     IconButton(
@@ -351,21 +376,24 @@ fun ContactItemCard(
                             contact.fullAddress()?.let { address ->
                                 IntentUtils.openMapAddress(context, address)
                             }
-                        }
+                        },
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Place,
                             contentDescription = "Open in Maps",
-                            tint = AccentBlue
+                            tint = AccentBlue,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
-                IconButton(onClick = onToggleFavorite) {
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = if (contact.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
                         contentDescription = if (contact.isFavorite) "Remove from favorites" else "Add to favorites",
-                        tint = if (contact.isFavorite) AccentAmber else MaterialTheme.colorScheme.outline
+                        tint = if (contact.isFavorite) AccentAmber else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

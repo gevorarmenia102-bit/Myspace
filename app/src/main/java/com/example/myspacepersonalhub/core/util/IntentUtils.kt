@@ -130,4 +130,67 @@ object IntentUtils {
         clipboard.setPrimaryClip(clip)
         SnackbarController.showMessage("📋 $label copied to clipboard")
     }
+
+    fun openWhatsApp(context: Context, rawNumber: String, messageText: String = ""): Boolean {
+        return try {
+            val digits = CountryPhoneHelper.cleanDigitsOnly(rawNumber)
+            if (digits.isBlank()) {
+                SnackbarController.showMessage("Invalid phone number for WhatsApp")
+                return false
+            }
+
+            // 1. Try native WhatsApp direct intent first
+            try {
+                val directUri = Uri.parse("whatsapp://send?phone=$digits" + if (messageText.isNotBlank()) "&text=${Uri.encode(messageText)}" else "")
+                val directIntent = Intent(Intent.ACTION_VIEW, directUri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(directIntent)
+                return true
+            } catch (_: Exception) {}
+
+            // 2. Fallback to https://wa.me/
+            val encodedMsg = if (messageText.isNotBlank()) "?text=${Uri.encode(messageText)}" else ""
+            val webUri = Uri.parse("https://wa.me/$digits$encodedMsg")
+            val webIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(webIntent)
+            true
+        } catch (e: Exception) {
+            SnackbarController.showMessage("Cannot open WhatsApp: ${e.message}")
+            false
+        }
+    }
+
+    fun openTelegram(context: Context, rawNumber: String): Boolean {
+        return try {
+            val digits = CountryPhoneHelper.cleanDigitsOnly(rawNumber)
+            if (digits.isBlank()) {
+                SnackbarController.showMessage("Invalid phone number for Telegram")
+                return false
+            }
+
+            // 1. Try native Telegram direct intent first
+            try {
+                val directUri = Uri.parse("tg://resolve?phone=+$digits")
+                val directIntent = Intent(Intent.ACTION_VIEW, directUri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(directIntent)
+                return true
+            } catch (_: Exception) {}
+
+            // 2. Fallback to https://t.me/
+            val webUri = Uri.parse("https://t.me/+$digits")
+            val webIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(webIntent)
+            true
+        } catch (e: Exception) {
+            SnackbarController.showMessage("Cannot open Telegram: ${e.message}")
+            false
+        }
+    }
 }
