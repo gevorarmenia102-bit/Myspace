@@ -45,26 +45,55 @@ fun ContactDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Contact Info", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "Contact Info",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            onClick = onBackClick
+                        )
                     }
                 },
                 actions = {
                     contact?.let { c ->
-                        IconButton(onClick = { viewModel.toggleFavorite(c) }) {
-                            Icon(
-                                if (c.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(end = 12.dp)
+                        ) {
+                            CircleIconButton(
+                                icon = if (c.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
                                 contentDescription = "Favorite",
-                                tint = if (c.isFavorite) AccentAmber else MaterialTheme.colorScheme.onSurface
+                                tint = if (c.isFavorite) AccentAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                containerColor = if (c.isFavorite) AccentAmber.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                borderColor = if (c.isFavorite) AccentAmber.copy(alpha = 0.4f) else null,
+                                onClick = { viewModel.toggleFavorite(c) }
                             )
-                        }
-                        IconButton(onClick = { onEditClick(c.id) }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Contact")
-                        }
-                        IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Contact", tint = AccentRed)
+                            CircleIconButton(
+                                icon = Icons.Default.Edit,
+                                contentDescription = "Edit Contact",
+                                tint = MaterialTheme.colorScheme.primary,
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                onClick = { onEditClick(c.id) }
+                            )
+                            CircleIconButton(
+                                icon = Icons.Default.DeleteOutline,
+                                contentDescription = "Delete Contact",
+                                tint = AccentRed,
+                                containerColor = AccentRed.copy(alpha = 0.12f),
+                                borderColor = AccentRed.copy(alpha = 0.3f),
+                                onClick = { showDeleteConfirm = true }
+                            )
                         }
                     }
                 },

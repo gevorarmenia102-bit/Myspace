@@ -84,15 +84,31 @@ fun VaultScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        onSyncClick()
-                        com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
-                    }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Sync Vault", tint = AccentPurple)
-                    }
-                    if (state.biometricEnabled) {
-                        IconButton(onClick = viewModel::lockVault) {
-                            Icon(Icons.Default.Lock, contentDescription = "Lock Vault", tint = AccentPurple)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 12.dp)
+                    ) {
+                        CircleIconButton(
+                            icon = Icons.Default.Refresh,
+                            contentDescription = "Sync Vault",
+                            tint = AccentPurple,
+                            containerColor = AccentPurple.copy(alpha = 0.15f),
+                            borderColor = AccentPurple.copy(alpha = 0.3f),
+                            onClick = {
+                                onSyncClick()
+                                com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
+                            }
+                        )
+                        if (state.biometricEnabled) {
+                            CircleIconButton(
+                                icon = Icons.Default.Lock,
+                                contentDescription = "Lock Vault",
+                                tint = AccentPurple,
+                                containerColor = AccentPurple.copy(alpha = 0.15f),
+                                borderColor = AccentPurple.copy(alpha = 0.3f),
+                                onClick = viewModel::lockVault
+                            )
                         }
                     }
                 },

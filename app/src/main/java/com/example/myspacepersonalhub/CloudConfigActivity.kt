@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import com.example.myspacepersonalhub.core.util.SnackbarController
 import com.example.myspacepersonalhub.ui.components.ModernSnackbar
+import com.example.myspacepersonalhub.ui.components.CircleIconButton
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
@@ -171,8 +172,12 @@ fun CloudConfigScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            onClick = onBack
+                        )
                     }
                 },
                 actions = {

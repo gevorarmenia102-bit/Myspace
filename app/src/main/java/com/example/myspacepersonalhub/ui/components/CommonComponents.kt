@@ -488,3 +488,86 @@ fun BiometricLockOverlay(
         }
     }
 }
+
+@Composable
+fun CircleIconButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 36.dp,
+    iconSize: Dp = 18.dp,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    borderColor: Color? = null
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(containerColor)
+            .then(
+                if (borderColor != null) Modifier.border(1.dp, borderColor, CircleShape)
+                else Modifier
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+@Composable
+fun HeaderSaveButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    text: String = "Save",
+    icon: ImageVector = Icons.Default.Check,
+    enabled: Boolean = true,
+    isLoading: Boolean = false,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimary
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled && !isLoading,
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+        modifier = modifier.height(36.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = containerColor.copy(alpha = 0.4f),
+            disabledContentColor = contentColor.copy(alpha = 0.6f)
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = contentColor
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        Text(
+            text = text,
+            color = contentColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+

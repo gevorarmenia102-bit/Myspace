@@ -11,9 +11,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.myspacepersonalhub.core.database.entity.BudgetEntity
 import com.example.myspacepersonalhub.core.util.CurrencyUtils
 import com.example.myspacepersonalhub.theme.AccentRed
+import com.example.myspacepersonalhub.ui.components.*
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,43 +36,53 @@ fun BudgetEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Set Monthly Budget", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "Set Monthly Budget",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            onClick = onBackClick
+                        )
                     }
                 },
                 actions = {
-                    Button(
-                        onClick = {
-                            val minorUnits = CurrencyUtils.parseToMinorUnits(limitAmountInput, currencyCode)
-                            if (minorUnits == null || minorUnits <= 0) {
-                                limitError = "Enter a valid positive amount"
-                                return@Button
-                            }
-                            if (name.trim().isBlank()) {
-                                nameError = "Budget name is required"
-                                return@Button
-                            }
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        HeaderSaveButton(
+                            onClick = {
+                                val minorUnits = CurrencyUtils.parseToMinorUnits(limitAmountInput, currencyCode)
+                                if (minorUnits == null || minorUnits <= 0) {
+                                    limitError = "Enter a valid positive amount"
+                                    return@HeaderSaveButton
+                                }
+                                if (name.trim().isBlank()) {
+                                    nameError = "Budget name is required"
+                                    return@HeaderSaveButton
+                                }
 
-                            val budget = BudgetEntity(
-                                id = UUID.randomUUID().toString(),
-                                name = name.trim(),
-                                currencyCode = currencyCode.uppercase().trim(),
-                                limitAmountMinorUnits = minorUnits,
-                                period = period
-                            )
+                                val budget = BudgetEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    name = name.trim(),
+                                    currencyCode = currencyCode.uppercase().trim(),
+                                    limitAmountMinorUnits = minorUnits,
+                                    period = period
+                                )
 
-                            viewModel.saveBudget(
-                                budget = budget,
-                                onSuccess = onSaveSuccess,
-                                onError = { limitError = it }
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
+                                viewModel.saveBudget(
+                                    budget = budget,
+                                    onSuccess = onSaveSuccess,
+                                    onError = { limitError = it }
+                                )
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

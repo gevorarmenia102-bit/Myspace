@@ -49,13 +49,18 @@ fun MoneyScreen(
             TopAppBar(
                 title = { Text("Money Manager", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            val csv = viewModel.exportToCsv()
-                            IntentUtils.shareText(context, csv, "Export Transactions CSV")
-                        }
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Export CSV", tint = MaterialTheme.colorScheme.primary)
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Share,
+                            contentDescription = "Export CSV",
+                            tint = MaterialTheme.colorScheme.primary,
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            onClick = {
+                                val csv = viewModel.exportToCsv()
+                                IntentUtils.shareText(context, csv, "Export Transactions CSV")
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

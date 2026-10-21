@@ -13,6 +13,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.myspacepersonalhub.theme.AccentPurple
 import com.example.myspacepersonalhub.theme.AccentRed
+import com.example.myspacepersonalhub.ui.components.*
+import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,41 +50,53 @@ fun VaultEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isEditMode) "Edit Secure Note" else "New Secure Note", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        if (isEditMode) "Edit Secure Note" else "New Secure Note",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            onClick = onBackClick
+                        )
                     }
                 },
                 actions = {
-                    Button(
-                        onClick = {
-                            if (title.trim().isBlank()) {
-                                titleError = "Title is required"
-                                return@Button
-                            }
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        HeaderSaveButton(
+                            text = "Encrypt & Save",
+                            containerColor = AccentPurple,
+                            onClick = {
+                                if (title.trim().isBlank()) {
+                                    titleError = "Title is required"
+                                    return@HeaderSaveButton
+                                }
 
-                            if (isEditMode) {
-                                viewModel.updateSecureNote(
-                                    id = itemId!!,
-                                    title = title.trim(),
-                                    secretText = secretText,
-                                    onSuccess = onSaveSuccess,
-                                    onError = { titleError = it }
-                                )
-                            } else {
-                                viewModel.saveSecureNote(
-                                    title = title.trim(),
-                                    secretText = secretText,
-                                    onSuccess = onSaveSuccess,
-                                    onError = { titleError = it }
-                                )
+                                if (isEditMode) {
+                                    viewModel.updateSecureNote(
+                                        id = itemId!!,
+                                        title = title.trim(),
+                                        secretText = secretText,
+                                        onSuccess = onSaveSuccess,
+                                        onError = { titleError = it }
+                                    )
+                                } else {
+                                    viewModel.saveSecureNote(
+                                        title = title.trim(),
+                                        secretText = secretText,
+                                        onSuccess = onSaveSuccess,
+                                        onError = { titleError = it }
+                                    )
+                                }
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text("Encrypt & Save", fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

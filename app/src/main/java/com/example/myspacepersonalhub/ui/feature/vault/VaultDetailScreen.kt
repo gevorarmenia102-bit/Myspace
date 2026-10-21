@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myspacepersonalhub.core.util.IntentUtils
 import com.example.myspacepersonalhub.theme.*
-import com.example.myspacepersonalhub.ui.components.ConfirmationDialog
+import com.example.myspacepersonalhub.ui.components.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,18 +47,46 @@ fun VaultDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(item?.title ?: "Vault Item", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        item?.title ?: "Vault Item",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            onClick = onBackClick
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = { onEditClick(itemId) }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit")
-                    }
-                    IconButton(onClick = { showDeleteConfirm = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AccentRed)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 12.dp)
+                    ) {
+                        CircleIconButton(
+                            icon = Icons.Default.Edit,
+                            contentDescription = "Edit",
+                            tint = AccentPurple,
+                            containerColor = AccentPurple.copy(alpha = 0.15f),
+                            borderColor = AccentPurple.copy(alpha = 0.3f),
+                            onClick = { onEditClick(itemId) }
+                        )
+                        CircleIconButton(
+                            icon = Icons.Default.DeleteOutline,
+                            contentDescription = "Delete",
+                            tint = AccentRed,
+                            containerColor = AccentRed.copy(alpha = 0.12f),
+                            borderColor = AccentRed.copy(alpha = 0.3f),
+                            onClick = { showDeleteConfirm = true }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

@@ -41,10 +41,7 @@ import com.example.myspacepersonalhub.core.util.CountryInfo
 import com.example.myspacepersonalhub.core.util.CountryPhoneHelper
 import com.example.myspacepersonalhub.core.util.IntentUtils
 import com.example.myspacepersonalhub.theme.*
-import com.example.myspacepersonalhub.ui.components.ConfirmationDialog
-import com.example.myspacepersonalhub.ui.components.CountryPickerBottomSheet
-import com.example.myspacepersonalhub.ui.components.FullImageViewerDialog
-import com.example.myspacepersonalhub.ui.components.InitialAvatar
+import com.example.myspacepersonalhub.ui.components.*
 import com.example.myspacepersonalhub.core.util.SnackbarController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -302,93 +299,105 @@ fun ContactEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isEditMode) "Edit Contact" else "New Contact", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        if (isEditMode) "Edit Contact" else "New Contact",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            onClick = onBackClick
+                        )
                     }
                 },
                 actions = {
-                    if (isEditMode) {
-                        IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AccentRed)
-                        }
-                    }
-                    Button(
-                        onClick = {
-                            if (displayName.trim().isBlank()) {
-                                displayNameError = "Display name is required"
-                                return@Button
-                            } else {
-                                displayNameError = null
-                            }
-
-                            if (email.isNotBlank() && !email.contains("@")) {
-                                emailError = "Invalid email format"
-                                return@Button
-                            } else {
-                                emailError = null
-                            }
-
-                            val cleanPhones = phoneEditItems
-                                .map { item ->
-                                    val full = CountryPhoneHelper.combineToInternational(item.country, item.nationalNumber)
-                                    PhoneNumber(number = full.trim(), label = item.label)
-                                }
-                                .filter { it.number.isNotBlank() }
-
-                            val parsedTags = tagsInput.split(",")
-                                .map { it.trim().removePrefix("#") }
-                                .filter { it.isNotBlank() }
-
-                            val contactToSave = ContactEntity(
-                                id = if (isEditMode) contactId!! else UUID.randomUUID().toString(),
-                                displayName = displayName.trim(),
-                                givenName = givenName.trim().ifBlank { null },
-                                familyName = familyName.trim().ifBlank { null },
-                                nickname = nickname.trim().ifBlank { null },
-                                email = email.trim().ifBlank { null },
-                                phoneNumbers = cleanPhones,
-                                profileImageLocalPath = profileImageLocalPath,
-                                profileImageStoragePath = if (profileImageLocalPath == existingContact?.profileImageLocalPath) {
-                                    existingContact?.profileImageStoragePath
-                                } else {
-                                    null
-                                },
-                                addressLine1 = addressLine1.trim().ifBlank { null },
-                                city = city.trim().ifBlank { null },
-                                region = region.trim().ifBlank { null },
-                                postalCode = postalCode.trim().ifBlank { null },
-                                country = country.trim().ifBlank { null },
-                                company = company.trim().ifBlank { null },
-                                jobTitle = jobTitle.trim().ifBlank { null },
-                                birthday = birthday.trim().ifBlank { null },
-                                tags = parsedTags,
-                                personalNotes = personalNotes.trim().ifBlank { null },
-                                isFavorite = isFavorite,
-                                isPinned = isPinned,
-                                createdAt = existingContact?.createdAt ?: System.currentTimeMillis()
-                            )
-
-                            viewModel.saveContact(
-                                contact = contactToSave,
-                                onSuccess = onSaveSuccess,
-                                onError = { displayNameError = it }
-                            )
-                        },
-                        enabled = !isProcessingImage,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.padding(end = 8.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 12.dp)
                     ) {
-                        if (isProcessingImage) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
+                        if (isEditMode) {
+                            CircleIconButton(
+                                icon = Icons.Default.DeleteOutline,
+                                contentDescription = "Delete",
+                                tint = AccentRed,
+                                containerColor = AccentRed.copy(alpha = 0.12f),
+                                borderColor = AccentRed.copy(alpha = 0.3f),
+                                onClick = { showDeleteConfirm = true }
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
                         }
-                        Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
+                        HeaderSaveButton(
+                            onClick = {
+                                if (displayName.trim().isBlank()) {
+                                    displayNameError = "Display name is required"
+                                    return@HeaderSaveButton
+                                } else {
+                                    displayNameError = null
+                                }
+
+                                if (email.isNotBlank() && !email.contains("@")) {
+                                    emailError = "Invalid email format"
+                                    return@HeaderSaveButton
+                                } else {
+                                    emailError = null
+                                }
+
+                                val cleanPhones = phoneEditItems
+                                    .map { item ->
+                                        val full = CountryPhoneHelper.combineToInternational(item.country, item.nationalNumber)
+                                        PhoneNumber(number = full.trim(), label = item.label)
+                                    }
+                                    .filter { it.number.isNotBlank() }
+
+                                val parsedTags = tagsInput.split(",")
+                                    .map { it.trim().removePrefix("#") }
+                                    .filter { it.isNotBlank() }
+
+                                val contactToSave = ContactEntity(
+                                    id = if (isEditMode) contactId!! else UUID.randomUUID().toString(),
+                                    displayName = displayName.trim(),
+                                    givenName = givenName.trim().ifBlank { null },
+                                    familyName = familyName.trim().ifBlank { null },
+                                    nickname = nickname.trim().ifBlank { null },
+                                    email = email.trim().ifBlank { null },
+                                    phoneNumbers = cleanPhones,
+                                    profileImageLocalPath = profileImageLocalPath,
+                                    profileImageStoragePath = if (profileImageLocalPath == existingContact?.profileImageLocalPath) {
+                                        existingContact?.profileImageStoragePath
+                                    } else {
+                                        null
+                                    },
+                                    addressLine1 = addressLine1.trim().ifBlank { null },
+                                    city = city.trim().ifBlank { null },
+                                    region = region.trim().ifBlank { null },
+                                    postalCode = postalCode.trim().ifBlank { null },
+                                    country = country.trim().ifBlank { null },
+                                    company = company.trim().ifBlank { null },
+                                    jobTitle = jobTitle.trim().ifBlank { null },
+                                    birthday = birthday.trim().ifBlank { null },
+                                    tags = parsedTags,
+                                    personalNotes = personalNotes.trim().ifBlank { null },
+                                    isFavorite = isFavorite,
+                                    isPinned = isPinned,
+                                    createdAt = existingContact?.createdAt ?: System.currentTimeMillis()
+                                )
+
+                                viewModel.saveContact(
+                                    contact = contactToSave,
+                                    onSuccess = onSaveSuccess,
+                                    onError = { displayNameError = it }
+                                )
+                            },
+                            enabled = !isProcessingImage,
+                            isLoading = isProcessingImage
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

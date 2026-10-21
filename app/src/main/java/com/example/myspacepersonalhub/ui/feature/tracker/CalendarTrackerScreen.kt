@@ -43,11 +43,18 @@ fun CalendarTrackerScreen(
             TopAppBar(
                 title = { Text("Calendar & Tracker", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = {
-                        onSyncClick()
-                        com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
-                    }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Sync Tracker", tint = MaterialTheme.colorScheme.primary)
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Refresh,
+                            contentDescription = "Sync Tracker",
+                            tint = MaterialTheme.colorScheme.primary,
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            onClick = {
+                                onSyncClick()
+                                com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

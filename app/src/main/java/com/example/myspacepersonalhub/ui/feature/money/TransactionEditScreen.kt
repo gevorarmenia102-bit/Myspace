@@ -18,6 +18,7 @@ import com.example.myspacepersonalhub.core.model.TransactionType
 import com.example.myspacepersonalhub.core.util.CurrencyUtils
 import com.example.myspacepersonalhub.theme.AccentEmerald
 import com.example.myspacepersonalhub.theme.AccentRed
+import com.example.myspacepersonalhub.ui.components.*
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,52 +47,62 @@ fun TransactionEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("New Transaction", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "New Transaction",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            onClick = onBackClick
+                        )
                     }
                 },
                 actions = {
-                    Button(
-                        onClick = {
-                            val minorUnits = CurrencyUtils.parseToMinorUnits(amountInput, currencyCode)
-                            if (minorUnits == null || minorUnits <= 0) {
-                                amountError = "Please enter a valid amount greater than zero"
-                                return@Button
-                            } else {
-                                amountError = null
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        HeaderSaveButton(
+                            onClick = {
+                                val minorUnits = CurrencyUtils.parseToMinorUnits(amountInput, currencyCode)
+                                if (minorUnits == null || minorUnits <= 0) {
+                                    amountError = "Please enter a valid amount greater than zero"
+                                    return@HeaderSaveButton
+                                } else {
+                                    amountError = null
+                                }
+
+                                if (title.trim().isBlank()) {
+                                    titleError = "Title is required"
+                                    return@HeaderSaveButton
+                                } else {
+                                    titleError = null
+                                }
+
+                                val tx = TransactionEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    type = type,
+                                    amountMinorUnits = minorUnits,
+                                    currencyCode = currencyCode.uppercase().trim(),
+                                    categoryId = category.trim(),
+                                    title = title.trim(),
+                                    transactionDate = System.currentTimeMillis(),
+                                    paymentMethod = paymentMethod.trim().ifBlank { null },
+                                    notes = notes.trim().ifBlank { null }
+                                )
+
+                                viewModel.saveTransaction(
+                                    transaction = tx,
+                                    onSuccess = onSaveSuccess,
+                                    onError = { amountError = it }
+                                )
                             }
-
-                            if (title.trim().isBlank()) {
-                                titleError = "Title is required"
-                                return@Button
-                            } else {
-                                titleError = null
-                            }
-
-                            val tx = TransactionEntity(
-                                id = UUID.randomUUID().toString(),
-                                type = type,
-                                amountMinorUnits = minorUnits,
-                                currencyCode = currencyCode.uppercase().trim(),
-                                categoryId = category.trim(),
-                                title = title.trim(),
-                                transactionDate = System.currentTimeMillis(),
-                                paymentMethod = paymentMethod.trim().ifBlank { null },
-                                notes = notes.trim().ifBlank { null }
-                            )
-
-                            viewModel.saveTransaction(
-                                transaction = tx,
-                                onSuccess = onSaveSuccess,
-                                onError = { amountError = it }
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

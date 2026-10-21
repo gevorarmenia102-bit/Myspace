@@ -19,7 +19,7 @@ import com.example.myspacepersonalhub.core.database.entity.TaskEntity
 import com.example.myspacepersonalhub.core.model.Priority
 import com.example.myspacepersonalhub.core.model.TaskStatus
 import com.example.myspacepersonalhub.theme.*
-import com.example.myspacepersonalhub.ui.components.ConfirmationDialog
+import com.example.myspacepersonalhub.ui.components.*
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -73,49 +73,68 @@ fun TaskEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isEditMode) "Edit Task" else "New Task", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        if (isEditMode) "Edit Task" else "New Task",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            onClick = onBackClick
+                        )
                     }
                 },
                 actions = {
-                    if (isEditMode) {
-                        IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AccentRed)
-                        }
-                    }
-                    Button(
-                        onClick = {
-                            if (title.trim().isBlank()) {
-                                titleError = "Task title is required"
-                                return@Button
-                            }
-
-                            val taskToSave = TaskEntity(
-                                id = if (isEditMode) taskId!! else UUID.randomUUID().toString(),
-                                title = title.trim(),
-                                description = description.trim().ifBlank { null },
-                                dueAt = dueAt,
-                                reminderAt = if (reminderEnabled) dueAt else null,
-                                priority = priority,
-                                status = status,
-                                recurrenceRule = if (recurrenceRule == "NONE") null else recurrenceRule,
-                                category = category.trim().ifBlank { "Personal" },
-                                createdAt = existingTask?.createdAt ?: System.currentTimeMillis()
-                            )
-
-                            viewModel.saveTask(
-                                task = taskToSave,
-                                context = context,
-                                onSuccess = onSaveSuccess,
-                                onError = { titleError = it }
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.padding(end = 8.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 12.dp)
                     ) {
-                        Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
+                        if (isEditMode) {
+                            CircleIconButton(
+                                icon = Icons.Default.DeleteOutline,
+                                contentDescription = "Delete",
+                                tint = AccentRed,
+                                containerColor = AccentRed.copy(alpha = 0.12f),
+                                borderColor = AccentRed.copy(alpha = 0.3f),
+                                onClick = { showDeleteConfirm = true }
+                            )
+                        }
+                        HeaderSaveButton(
+                            onClick = {
+                                if (title.trim().isBlank()) {
+                                    titleError = "Task title is required"
+                                    return@HeaderSaveButton
+                                }
+
+                                val taskToSave = TaskEntity(
+                                    id = if (isEditMode) taskId!! else UUID.randomUUID().toString(),
+                                    title = title.trim(),
+                                    description = description.trim().ifBlank { null },
+                                    dueAt = dueAt,
+                                    reminderAt = if (reminderEnabled) dueAt else null,
+                                    priority = priority,
+                                    status = status,
+                                    recurrenceRule = if (recurrenceRule == "NONE") null else recurrenceRule,
+                                    category = category.trim().ifBlank { "Personal" },
+                                    createdAt = existingTask?.createdAt ?: System.currentTimeMillis()
+                                )
+
+                                viewModel.saveTask(
+                                    task = taskToSave,
+                                    context = context,
+                                    onSuccess = onSaveSuccess,
+                                    onError = { titleError = it }
+                                )
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

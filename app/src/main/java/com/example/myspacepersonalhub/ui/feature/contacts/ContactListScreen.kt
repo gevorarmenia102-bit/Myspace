@@ -61,8 +61,15 @@ fun ContactListScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showExportDialog = true }) {
-                        Icon(Icons.Default.IosShare, contentDescription = "Export / Share Contacts", tint = MaterialTheme.colorScheme.primary)
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.IosShare,
+                            contentDescription = "Export / Share Contacts",
+                            tint = MaterialTheme.colorScheme.primary,
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            onClick = { showExportDialog = true }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

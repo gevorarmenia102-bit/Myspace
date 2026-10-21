@@ -44,11 +44,18 @@ fun QuickAccessScreen(
             TopAppBar(
                 title = { Text("Quick Access", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = {
-                        onSyncClick()
-                        com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
-                    }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Sync Quick Access", tint = AccentAmber)
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Refresh,
+                            contentDescription = "Sync Quick Access",
+                            tint = AccentAmber,
+                            containerColor = AccentAmber.copy(alpha = 0.15f),
+                            borderColor = AccentAmber.copy(alpha = 0.3f),
+                            onClick = {
+                                onSyncClick()
+                                com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)

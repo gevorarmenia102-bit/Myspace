@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myspacepersonalhub.core.database.entity.NoteEntity
 import com.example.myspacepersonalhub.theme.*
-import com.example.myspacepersonalhub.ui.components.ConfirmationDialog
+import com.example.myspacepersonalhub.ui.components.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -96,20 +96,11 @@ fun NoteEditScreen(
                     )
                 },
                 navigationIcon = {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 12.dp)
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .clickable(onClick = onBackClick),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
+                    Box(modifier = Modifier.padding(start = 12.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Close,
                             contentDescription = "Cancel",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(18.dp)
+                            onClick = onBackClick
                         )
                     }
                 },
@@ -120,7 +111,7 @@ fun NoteEditScreen(
                         modifier = Modifier.padding(end = 12.dp)
                     ) {
                         // Pin Toggle
-                        HeaderCircleButton(
+                        CircleIconButton(
                             icon = Icons.Default.PushPin,
                             contentDescription = "Pin Note",
                             tint = if (isPinned) AccentEmerald else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -130,7 +121,7 @@ fun NoteEditScreen(
                         )
 
                         // Favorite Toggle
-                        HeaderCircleButton(
+                        CircleIconButton(
                             icon = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
                             contentDescription = "Favorite Note",
                             tint = if (isFavorite) AccentAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -141,7 +132,7 @@ fun NoteEditScreen(
 
                         // Delete (only in edit mode)
                         if (isEditMode) {
-                            HeaderCircleButton(
+                            CircleIconButton(
                                 icon = Icons.Default.DeleteOutline,
                                 contentDescription = "Move to Trash",
                                 tint = AccentRed,
@@ -152,11 +143,11 @@ fun NoteEditScreen(
                         }
 
                         // Save Button
-                        Button(
+                        HeaderSaveButton(
                             onClick = {
                                 if (title.trim().isBlank() && body.trim().isBlank()) {
                                     titleError = "Please enter a title or body"
-                                    return@Button
+                                    return@HeaderSaveButton
                                 }
 
                                 val parsedTags = tagsInput.split(",")
@@ -182,29 +173,8 @@ fun NoteEditScreen(
                                     onSuccess = onSaveSuccess,
                                     onError = { titleError = it }
                                 )
-                            },
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                            modifier = Modifier.height(36.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "Save",
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -305,32 +275,3 @@ fun NoteEditScreen(
     }
 }
 
-@Composable
-private fun HeaderCircleButton(
-    icon: ImageVector,
-    contentDescription: String?,
-    tint: Color,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-    borderColor: Color? = null,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(containerColor)
-            .then(
-                if (borderColor != null) Modifier.border(1.dp, borderColor, CircleShape)
-                else Modifier
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
