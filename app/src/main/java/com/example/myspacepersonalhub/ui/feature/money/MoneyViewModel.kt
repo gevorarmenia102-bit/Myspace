@@ -102,6 +102,16 @@ class MoneyViewModel(private val moneyRepository: MoneyRepository) : ViewModel()
     }
 
     fun deleteTransaction(id: String) {
+        _uiState.update { state ->
+            val updatedTxs = state.transactions.filterNot { it.id == id }
+            val balances = CurrencyUtils.calculateTotalsByCurrency(updatedTxs)
+            val filtered = applyFilter(updatedTxs, state.selectedCurrency, state.selectedType, state.searchQuery)
+            state.copy(
+                transactions = updatedTxs,
+                filteredTransactions = filtered,
+                currencyBalances = balances
+            )
+        }
         viewModelScope.launch {
             moneyRepository.deleteTransaction(id)
         }
@@ -123,6 +133,10 @@ class MoneyViewModel(private val moneyRepository: MoneyRepository) : ViewModel()
     }
 
     fun deleteBudget(id: String) {
+        _uiState.update { state ->
+            val updated = state.budgets.filterNot { it.id == id }
+            state.copy(budgets = updated)
+        }
         viewModelScope.launch {
             moneyRepository.deleteBudget(id)
         }

@@ -36,7 +36,18 @@ class TrackerRepository(
     }
 
     suspend fun deleteHabit(id: String) {
-        trackerDao.softDeleteHabit(id)
+        val existing = trackerDao.getHabitByIdDirect(id)
+        if (existing != null) {
+            trackerDao.updateHabit(
+                existing.copy(
+                    deletedAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    syncState = SyncState.PENDING_DELETE
+                )
+            )
+        } else {
+            trackerDao.softDeleteHabit(id)
+        }
         onDataChanged?.invoke()
     }
 
@@ -150,7 +161,18 @@ class TrackerRepository(
     }
 
     suspend fun deleteGoal(id: String) {
-        trackerDao.softDeleteGoal(id)
+        val existing = trackerDao.getGoalByIdDirect(id)
+        if (existing != null) {
+            trackerDao.updateGoal(
+                existing.copy(
+                    deletedAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    syncState = SyncState.PENDING_DELETE
+                )
+            )
+        } else {
+            trackerDao.softDeleteGoal(id)
+        }
         onDataChanged?.invoke()
     }
 }

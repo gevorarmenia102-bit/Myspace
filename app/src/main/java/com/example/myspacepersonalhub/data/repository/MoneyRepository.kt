@@ -44,7 +44,18 @@ class MoneyRepository(
     }
 
     suspend fun deleteTransaction(id: String) {
-        moneyDao.softDeleteTransaction(id)
+        val tx = moneyDao.getTransactionByIdDirect(id)
+        if (tx != null) {
+            moneyDao.updateTransaction(
+                tx.copy(
+                    deletedAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    syncState = SyncState.PENDING_DELETE
+                )
+            )
+        } else {
+            moneyDao.softDeleteTransaction(id)
+        }
         onDataChanged?.invoke()
     }
 
@@ -61,7 +72,18 @@ class MoneyRepository(
     }
 
     suspend fun deleteBudget(id: String) {
-        moneyDao.softDeleteBudget(id)
+        val b = moneyDao.getBudgetByIdDirect(id)
+        if (b != null) {
+            moneyDao.updateBudget(
+                b.copy(
+                    deletedAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    syncState = SyncState.PENDING_DELETE
+                )
+            )
+        } else {
+            moneyDao.softDeleteBudget(id)
+        }
         onDataChanged?.invoke()
     }
 

@@ -523,6 +523,27 @@ fun CircleIconButton(
 }
 
 @Composable
+fun CircleDeleteButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 34.dp,
+    iconSize: Dp = 17.dp,
+    contentDescription: String? = "Delete"
+) {
+    CircleIconButton(
+        icon = Icons.Default.DeleteOutline,
+        contentDescription = contentDescription,
+        onClick = onClick,
+        modifier = modifier,
+        size = size,
+        iconSize = iconSize,
+        tint = AccentRed,
+        containerColor = AccentRed.copy(alpha = 0.12f),
+        borderColor = AccentRed.copy(alpha = 0.25f)
+    )
+}
+
+@Composable
 fun HeaderSaveButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,

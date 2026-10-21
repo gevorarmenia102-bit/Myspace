@@ -268,7 +268,7 @@ class SyncManager(
                 override fun onChildRemoved(snapshot: DataSnapshot) {
                     val id = snapshot.key ?: return
                     scope.launch {
-                        val local = database.moneyDao().getAllTransactions().first().find { it.id == id }
+                        val local = database.moneyDao().getTransactionByIdDirect(id)
                         if (local != null) database.moneyDao().deleteTransaction(local)
                     }
                 }
@@ -609,9 +609,13 @@ class SyncManager(
         try {
             val id = snapshot.key ?: return@withContext
             val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
-            val local = database.moneyDao().getAllTransactions().first().find { it.id == id }
+            val local = database.moneyDao().getTransactionByIdDirect(id)
 
             if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
+            }
+
+            if (local != null && local.deletedAt != null) {
                 return@withContext
             }
 

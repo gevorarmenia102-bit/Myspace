@@ -60,6 +60,10 @@ class QuickAccessViewModel(private val repository: QuickAccessRepository) : View
     }
 
     fun deleteItem(id: String) {
+        _uiState.update { state ->
+            val updated = state.items.filterNot { it.id == id }
+            state.copy(items = updated, filteredItems = applyFilter(updated, state.selectedType, state.searchQuery))
+        }
         viewModelScope.launch {
             repository.deleteItem(id)
         }

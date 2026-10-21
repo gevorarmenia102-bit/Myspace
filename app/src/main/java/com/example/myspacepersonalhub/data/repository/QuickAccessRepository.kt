@@ -48,7 +48,18 @@ class QuickAccessRepository(
     }
 
     suspend fun deleteItem(id: String) {
-        quickAccessDao.softDeleteQuickAccessItem(id)
+        val existing = quickAccessDao.getQuickAccessItemByIdDirect(id)
+        if (existing != null) {
+            quickAccessDao.updateQuickAccessItem(
+                existing.copy(
+                    deletedAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    syncState = SyncState.PENDING_DELETE
+                )
+            )
+        } else {
+            quickAccessDao.softDeleteQuickAccessItem(id)
+        }
         onDataChanged?.invoke()
     }
 }

@@ -228,9 +228,11 @@ private fun HabitsTabContent(
                             }
                         }
 
-                        IconButton(onClick = { onDelete(item.habit.id) }) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
-                        }
+                        CircleDeleteButton(
+                            onClick = { onDelete(item.habit.id) },
+                            size = 34.dp,
+                            iconSize = 17.dp
+                        )
                     }
                 }
             }
@@ -278,7 +280,10 @@ private fun GoalsTabContent(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onBackground
                             )
-                            Row {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Button(
                                     onClick = { onIncrement(goal) },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -287,9 +292,11 @@ private fun GoalsTabContent(
                                 ) {
                                     Text("+1", fontSize = 12.sp, color = AccentBlue, fontWeight = FontWeight.Bold)
                                 }
-                                IconButton(onClick = { onDelete(goal.id) }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(16.dp))
-                                }
+                                CircleDeleteButton(
+                                    onClick = { onDelete(goal.id) },
+                                    size = 32.dp,
+                                    iconSize = 16.dp
+                                )
                             }
                         }
 

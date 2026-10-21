@@ -283,13 +283,23 @@ fun NoteCardItem(
                         }
                     }
                 } else {
-                    Row {
-                        IconButton(onClick = onRestore, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Restore, contentDescription = "Restore", tint = AccentEmerald, modifier = Modifier.size(16.dp))
-                        }
-                        IconButton(onClick = onDeletePermanently, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.DeleteForever, contentDescription = "Delete", tint = AccentRed, modifier = Modifier.size(16.dp))
-                        }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CircleIconButton(
+                            icon = Icons.Default.Restore,
+                            contentDescription = "Restore",
+                            onClick = onRestore,
+                            size = 30.dp,
+                            iconSize = 15.dp,
+                            tint = AccentEmerald,
+                            containerColor = AccentEmerald.copy(alpha = 0.12f),
+                            borderColor = AccentEmerald.copy(alpha = 0.25f)
+                        )
+                        CircleDeleteButton(
+                            onClick = onDeletePermanently,
+                            size = 30.dp,
+                            iconSize = 15.dp,
+                            contentDescription = "Delete Forever"
+                        )
                     }
                 }
             }

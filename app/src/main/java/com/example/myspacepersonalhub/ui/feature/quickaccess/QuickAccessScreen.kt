@@ -185,9 +185,11 @@ fun QuickAccessScreen(
                                     )
                                 }
 
-                                IconButton(onClick = { viewModel.deleteItem(item.id) }) {
-                                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
-                                }
+                                CircleDeleteButton(
+                                    onClick = { viewModel.deleteItem(item.id) },
+                                    size = 34.dp,
+                                    iconSize = 17.dp
+                                )
                             }
                         }
                     }

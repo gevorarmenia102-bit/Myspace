@@ -133,6 +133,9 @@ class TrackerViewModel(
     }
 
     fun deleteHabit(id: String) {
+        _uiState.update { state ->
+            state.copy(habits = state.habits.filterNot { it.habit.id == id })
+        }
         viewModelScope.launch {
             trackerRepository.deleteHabit(id)
         }
@@ -152,6 +155,9 @@ class TrackerViewModel(
     }
 
     fun deleteGoal(id: String) {
+        _uiState.update { state ->
+            state.copy(goals = state.goals.filterNot { it.id == id })
+        }
         viewModelScope.launch {
             trackerRepository.deleteGoal(id)
         }

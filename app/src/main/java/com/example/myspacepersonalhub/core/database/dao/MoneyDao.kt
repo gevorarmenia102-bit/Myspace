@@ -22,6 +22,9 @@ interface MoneyDao {
     @Query("SELECT * FROM transactions WHERE id = :id AND deletedAt IS NULL")
     fun getTransactionById(id: String): Flow<TransactionEntity?>
 
+    @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
+    suspend fun getTransactionByIdDirect(id: String): TransactionEntity?
+
     @Query("SELECT * FROM transactions WHERE syncState != 'SYNCED'")
     suspend fun getPendingSyncTransactions(): List<TransactionEntity>
 
@@ -46,6 +49,9 @@ interface MoneyDao {
 
     @Query("SELECT * FROM budgets WHERE id = :id AND deletedAt IS NULL")
     fun getBudgetById(id: String): Flow<BudgetEntity?>
+
+    @Query("SELECT * FROM budgets WHERE id = :id LIMIT 1")
+    suspend fun getBudgetByIdDirect(id: String): BudgetEntity?
 
     @Query("SELECT * FROM budgets WHERE syncState != 'SYNCED'")
     suspend fun getPendingSyncBudgets(): List<BudgetEntity>

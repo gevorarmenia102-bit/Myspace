@@ -281,19 +281,21 @@ fun TransactionItemCard(
                 )
             }
 
-            Column(horizontalAlignment = Alignment.End) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text(
                     text = "${if (isIncome) "+" else "-"} ${CurrencyUtils.formatAmount(transaction.amountMinorUnits, transaction.currencyCode)}",
                     fontWeight = FontWeight.Bold,
                     color = if (isIncome) AccentEmerald else AccentRed,
                     fontSize = 13.sp
                 )
-                IconButton(
+                CircleDeleteButton(
                     onClick = { showDeleteConfirm = true },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(16.dp))
-                }
+                    size = 30.dp,
+                    iconSize = 15.dp
+                )
             }
         }
     }
