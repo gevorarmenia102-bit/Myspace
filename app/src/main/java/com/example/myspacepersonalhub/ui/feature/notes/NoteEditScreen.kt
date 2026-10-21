@@ -1,8 +1,12 @@
 package com.example.myspacepersonalhub.ui.feature.notes
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -11,7 +15,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myspacepersonalhub.core.database.entity.NoteEntity
@@ -73,67 +81,130 @@ fun NoteEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isEditMode) "Edit ${if (isJournal) "Journal" else "Note"}" else "New ${if (isJournal) "Journal" else "Note"}", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        text = if (isEditMode) {
+                            if (isJournal) "Edit Journal" else "Edit Note"
+                        } else {
+                            if (isJournal) "New Journal" else "New Note"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .clickable(onClick = onBackClick),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = { isPinned = !isPinned }) {
-                        Icon(
-                            Icons.Default.PushPin,
-                            contentDescription = "Pin",
-                            tint = if (isPinned) AccentEmerald else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    IconButton(onClick = { isFavorite = !isFavorite }) {
-                        Icon(
-                            if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = "Favorite",
-                            tint = if (isFavorite) AccentAmber else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    if (isEditMode) {
-                        IconButton(onClick = { showTrashConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Move to Trash", tint = AccentRed)
-                        }
-                    }
-                    Button(
-                        onClick = {
-                            if (title.trim().isBlank() && body.trim().isBlank()) {
-                                titleError = "Please enter a title or body"
-                                return@Button
-                            }
-
-                            val parsedTags = tagsInput.split(",")
-                                .map { it.trim().removePrefix("#") }
-                                .filter { it.isNotBlank() }
-
-                            val noteToSave = NoteEntity(
-                                id = if (isEditMode) noteId!! else UUID.randomUUID().toString(),
-                                title = title.trim().ifBlank { "Untitled Note" },
-                                body = body,
-                                category = category.trim().ifBlank { "General" },
-                                tags = parsedTags,
-                                isJournal = isJournal || existingNote?.isJournal == true,
-                                journalMood = journalMood,
-                                journalDate = journalDate,
-                                isPinned = isPinned,
-                                isFavorite = isFavorite,
-                                createdAt = existingNote?.createdAt ?: System.currentTimeMillis()
-                            )
-
-                            viewModel.saveNote(
-                                note = noteToSave,
-                                onSuccess = onSaveSuccess,
-                                onError = { titleError = it }
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.padding(end = 8.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 12.dp)
                     ) {
-                        Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
+                        // Pin Toggle
+                        HeaderCircleButton(
+                            icon = Icons.Default.PushPin,
+                            contentDescription = "Pin Note",
+                            tint = if (isPinned) AccentEmerald else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            containerColor = if (isPinned) AccentEmerald.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            borderColor = if (isPinned) AccentEmerald.copy(alpha = 0.4f) else null,
+                            onClick = { isPinned = !isPinned }
+                        )
+
+                        // Favorite Toggle
+                        HeaderCircleButton(
+                            icon = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Favorite Note",
+                            tint = if (isFavorite) AccentAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            containerColor = if (isFavorite) AccentAmber.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            borderColor = if (isFavorite) AccentAmber.copy(alpha = 0.4f) else null,
+                            onClick = { isFavorite = !isFavorite }
+                        )
+
+                        // Delete (only in edit mode)
+                        if (isEditMode) {
+                            HeaderCircleButton(
+                                icon = Icons.Default.DeleteOutline,
+                                contentDescription = "Move to Trash",
+                                tint = AccentRed,
+                                containerColor = AccentRed.copy(alpha = 0.12f),
+                                borderColor = AccentRed.copy(alpha = 0.3f),
+                                onClick = { showTrashConfirm = true }
+                            )
+                        }
+
+                        // Save Button
+                        Button(
+                            onClick = {
+                                if (title.trim().isBlank() && body.trim().isBlank()) {
+                                    titleError = "Please enter a title or body"
+                                    return@Button
+                                }
+
+                                val parsedTags = tagsInput.split(",")
+                                    .map { it.trim().removePrefix("#") }
+                                    .filter { it.isNotBlank() }
+
+                                val noteToSave = NoteEntity(
+                                    id = if (isEditMode) noteId!! else UUID.randomUUID().toString(),
+                                    title = title.trim().ifBlank { "Untitled Note" },
+                                    body = body,
+                                    category = category.trim().ifBlank { "General" },
+                                    tags = parsedTags,
+                                    isJournal = isJournal || existingNote?.isJournal == true,
+                                    journalMood = journalMood,
+                                    journalDate = journalDate,
+                                    isPinned = isPinned,
+                                    isFavorite = isFavorite,
+                                    createdAt = existingNote?.createdAt ?: System.currentTimeMillis()
+                                )
+
+                                viewModel.saveNote(
+                                    note = noteToSave,
+                                    onSuccess = onSaveSuccess,
+                                    onError = { titleError = it }
+                                )
+                            },
+                            shape = RoundedCornerShape(18.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                            modifier = Modifier.height(36.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Save",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -230,6 +301,36 @@ fun NoteEditScreen(
                 onSaveSuccess()
             },
             onDismiss = { showTrashConfirm = false }
+        )
+    }
+}
+
+@Composable
+private fun HeaderCircleButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    tint: Color,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    borderColor: Color? = null,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(containerColor)
+            .then(
+                if (borderColor != null) Modifier.border(1.dp, borderColor, CircleShape)
+                else Modifier
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
         )
     }
 }
