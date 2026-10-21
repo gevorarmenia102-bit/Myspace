@@ -120,9 +120,6 @@ fun ContactEditScreen(
     var isLoaded by remember { mutableStateOf(false) }
     var showCountryPickerForIndex by remember { mutableStateOf<Int?>(null) }
     var isLookingUpCallerId by remember { mutableStateOf(false) }
-    var showTruecallerDialog by remember { mutableStateOf(false) }
-    var pendingLookupPhone by remember { mutableStateOf<String?>(null) }
-    var pendingLookupCountryIso by remember { mutableStateOf<String?>(null) }
 
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -602,18 +599,17 @@ fun ContactEditScreen(
                                 value = item.nationalNumber,
                                 onValueChange = { input ->
                                     if (input.contains("+")) {
-                                        // Pasted international number (e.g. +374 95 110691)
+                                        // Pasted international number (e.g. +374 94 443286)
                                         val detected = CountryPhoneHelper.detectCountry(input) ?: item.country
                                         val national = CountryPhoneHelper.extractNationalPart(input, detected)
                                         val updated = phoneEditItems.toMutableList()
                                         updated[index] = item.copy(country = detected, nationalNumber = national)
                                         phoneEditItems = updated
                                     } else {
-                                        // Strictly numbers only: discard letters, symbols, etc.
-                                        val digitsOnly = input.filter { it.isDigit() }
-                                        val formatted = CountryPhoneHelper.formatNationalAsYouType(digitsOnly, item.country)
+                                        // Allow digits, spaces, and hyphens without mutating string underneath cursor
+                                        val clean = input.filter { it.isDigit() || it == ' ' || it == '-' }
                                         val updated = phoneEditItems.toMutableList()
-                                        updated[index] = item.copy(nationalNumber = formatted)
+                                        updated[index] = item.copy(nationalNumber = clean)
                                         phoneEditItems = updated
                                     }
                                 },
@@ -683,17 +679,7 @@ fun ContactEditScreen(
                                             return@launch
                                         }
 
-                                        // 2. Check if Truecaller token is configured
-                                        val token = CallerIdService.getTruecallerToken(context)
-                                        if (token.isNullOrBlank()) {
-                                            isLookingUpCallerId = false
-                                            pendingLookupPhone = fullNumber
-                                            pendingLookupCountryIso = item.country.iso2
-                                            showTruecallerDialog = true
-                                            return@launch
-                                        }
-
-                                        // 3. Perform live lookup with token
+                                        // 2. Live query with token configured in Cloud Settings (no popup dialog)
                                         val result = CallerIdService.lookupCallerId(
                                             context = context,
                                             rawPhone = fullNumber,
@@ -707,7 +693,12 @@ fun ContactEditScreen(
                                             if (familyName.isBlank()) familyName = last
                                             SnackbarController.showMessage("✨ Auto-filled: ${result.name} (${result.source})")
                                         } else {
-                                            SnackbarController.showMessage("No name found for $fullNumber in Truecaller")
+                                            val token = CallerIdService.getTruecallerToken(context)
+                                            if (token.isNullOrBlank()) {
+                                                SnackbarController.showMessage("No contact found (Configure Truecaller in Cloud Settings for live search)")
+                                            } else {
+                                                SnackbarController.showMessage("No name found for $fullNumber")
+                                            }
                                         }
                                     }
                                 },
@@ -1129,87 +1120,6 @@ fun ContactEditScreen(
                     phoneEditItems = updated
                 }
                 showCountryPickerForIndex = null
-            }
-        )
-    }
-
-    if (showTruecallerDialog) {
-        var tokenInput by remember {
-            mutableStateOf(CallerIdService.getTruecallerToken(context) ?: "")
-        }
-
-        AlertDialog(
-            onDismissRequest = { showTruecallerDialog = false },
-            icon = {
-                Icon(
-                    Icons.Default.PhoneCallback,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text("Truecaller Auto-fill Setup", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Truecaller requires an Installation Token to search their live global caller directory. Local device contacts are searched automatically without any token.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = tokenInput,
-                        onValueChange = { tokenInput = it },
-                        label = { Text("Truecaller Installation Token / Bearer") },
-                        placeholder = { Text("e.g. a1k07--...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-                    if (tokenInput.isNotBlank()) {
-                        Text(
-                            "✅ Token will be saved on this device for one-tap auto-fill.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (tokenInput.isNotBlank()) {
-                            CallerIdService.setTruecallerToken(context, tokenInput)
-                        }
-                        showTruecallerDialog = false
-                        val phoneToSearch = pendingLookupPhone
-                        val isoToSearch = pendingLookupCountryIso
-                        if (!phoneToSearch.isNullOrBlank()) {
-                            coroutineScope.launch {
-                                isLookingUpCallerId = true
-                                val result = CallerIdService.lookupCallerId(context, phoneToSearch, isoToSearch)
-                                isLookingUpCallerId = false
-                                if (result != null) {
-                                    displayName = result.name
-                                    val (first, last) = CallerIdService.splitFullName(result.name)
-                                    if (givenName.isBlank()) givenName = first
-                                    if (familyName.isBlank()) familyName = last
-                                    SnackbarController.showMessage("✨ Auto-filled: ${result.name} (${result.source})")
-                                } else {
-                                    SnackbarController.showMessage("No name found for $phoneToSearch")
-                                }
-                            }
-                        }
-                    }
-                ) {
-                    Text(if (tokenInput.isNotBlank()) "Save & Search" else "Search Contacts Only")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTruecallerDialog = false }) {
-                    Text("Cancel")
-                }
             }
         )
     }

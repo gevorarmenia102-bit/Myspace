@@ -164,41 +164,13 @@ fun ContactDetailScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Quick Action Bar: Call, WhatsApp, Telegram, Email, Maps, Share
+                // Quick Action Bar: Email, Maps, Share (Call, WhatsApp, and Telegram are on each Phone Number card below)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
+                        .padding(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    val primaryPhone = currentContact.phoneNumbers.firstOrNull()?.number
-                    val hasPhone = !primaryPhone.isNullOrBlank()
-
-                    QuickActionButton(
-                        icon = Icons.Default.Phone,
-                        label = "Call",
-                        enabled = hasPhone,
-                        onClick = { primaryPhone?.let { IntentUtils.openDialer(context, it) } }
-                    )
-
-                    QuickActionButton(
-                        icon = Icons.Default.Chat,
-                        label = "WhatsApp",
-                        enabled = hasPhone,
-                        tint = AccentWhatsApp,
-                        containerColor = AccentWhatsApp.copy(alpha = 0.15f),
-                        onClick = { primaryPhone?.let { IntentUtils.openWhatsApp(context, it) } }
-                    )
-
-                    QuickActionButton(
-                        icon = Icons.Default.Send,
-                        label = "Telegram",
-                        enabled = hasPhone,
-                        tint = AccentTelegram,
-                        containerColor = AccentTelegram.copy(alpha = 0.15f),
-                        onClick = { primaryPhone?.let { IntentUtils.openTelegram(context, it) } }
-                    )
-
                     QuickActionButton(
                         icon = Icons.Default.Email,
                         label = "Email",

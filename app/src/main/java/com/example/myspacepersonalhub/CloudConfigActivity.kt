@@ -698,6 +698,133 @@ fun CloudConfigScreen(
                 }
             }
 
+            // ==========================================
+            // 4. TRUECALLER CALLER ID CONFIGURATION
+            // ==========================================
+            var truecallerTokenInput by remember {
+                mutableStateOf(com.example.myspacepersonalhub.core.util.CallerIdService.getTruecallerToken(context) ?: "")
+            }
+            var showTruecallerTokenSaved by remember { mutableStateOf(false) }
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(AccentBlue.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.PhoneCallback,
+                                    contentDescription = null,
+                                    tint = AccentBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    "Truecaller Caller ID API",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "Global live name auto-fill for unknown numbers",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (truecallerTokenInput.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = AccentEmerald.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "Configured",
+                                    color = AccentEmerald,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = truecallerTokenInput,
+                        onValueChange = {
+                            truecallerTokenInput = it
+                            showTruecallerTokenSaved = false
+                        },
+                        label = { Text("Installation Token / Bearer", fontSize = 11.sp) },
+                        placeholder = { Text("e.g. a1k07--...", fontSize = 10.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                        trailingIcon = {
+                            if (truecallerTokenInput.isNotBlank()) {
+                                IconButton(onClick = {
+                                    truecallerTokenInput = ""
+                                    com.example.myspacepersonalhub.core.util.CallerIdService.setTruecallerToken(context, "")
+                                    SnackbarController.showMessage("Truecaller token cleared")
+                                }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                com.example.myspacepersonalhub.core.util.CallerIdService.setTruecallerToken(context, truecallerTokenInput)
+                                showTruecallerTokenSaved = true
+                                SnackbarController.showMessage("✅ Truecaller Token Saved!")
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save Token", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    if (showTruecallerTokenSaved) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "✅ Token saved. Live Truecaller search will now run automatically in Contact Edit.",
+                            fontSize = 10.sp,
+                            color = AccentEmerald
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(60.dp))
         }
     }

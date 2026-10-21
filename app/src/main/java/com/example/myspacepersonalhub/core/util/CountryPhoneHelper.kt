@@ -167,9 +167,8 @@ object CountryPhoneHelper {
                 val digits = digitsOnly
                 when {
                     digits.length <= 2 -> digits
-                    digits.length <= 5 -> "${digits.substring(0, 2)} ${digits.substring(2)}"
-                    digits.length <= 8 -> "${digits.substring(0, 2)} ${digits.substring(2, 5)} ${digits.substring(5)}"
-                    else -> "${digits.substring(0, 2)} ${digits.substring(2, 5)} ${digits.substring(5, 8)} ${digits.substring(8)}"
+                    digits.length <= 8 -> "${digits.substring(0, 2)} ${digits.substring(2)}"
+                    else -> "${digits.substring(0, 2)} ${digits.substring(2, 8)} ${digits.substring(8)}"
                 }
             }
             "OM" -> {
