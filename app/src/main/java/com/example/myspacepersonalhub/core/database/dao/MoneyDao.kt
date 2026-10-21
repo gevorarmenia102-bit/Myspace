@@ -34,6 +34,9 @@ interface MoneyDao {
     @Query("UPDATE transactions SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE id = :id")
     suspend fun softDeleteTransaction(id: String, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE transactions SET syncState = 'PENDING_UPDATE' WHERE syncState = 'SYNCED'")
+    suspend fun markAllSyncedAsPending()
+
     @Delete
     suspend fun deleteTransaction(transaction: TransactionEntity)
 

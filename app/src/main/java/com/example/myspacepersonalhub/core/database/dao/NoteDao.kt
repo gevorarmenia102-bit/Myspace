@@ -59,6 +59,9 @@ interface NoteDao {
     @Query("UPDATE notes SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE inTrash = 1")
     suspend fun emptyTrash(timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE notes SET syncState = 'PENDING_UPDATE' WHERE deletedAt IS NULL AND syncState = 'SYNCED'")
+    suspend fun markAllSyncedAsPending()
+
     @Delete
     suspend fun deleteNote(note: NoteEntity)
 }

@@ -50,6 +50,9 @@ interface ContactDao {
     @Query("UPDATE contacts SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE id = :id")
     suspend fun softDeleteContact(id: String, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE contacts SET syncState = 'PENDING_UPDATE' WHERE deletedAt IS NULL AND syncState = 'SYNCED'")
+    suspend fun markAllSyncedAsPending()
+
     @Delete
     suspend fun deleteContact(contact: ContactEntity)
 }

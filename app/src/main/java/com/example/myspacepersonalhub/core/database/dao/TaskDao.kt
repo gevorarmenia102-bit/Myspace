@@ -42,6 +42,9 @@ interface TaskDao {
     @Query("UPDATE tasks SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE id = :id")
     suspend fun softDeleteTask(id: String, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE tasks SET syncState = 'PENDING_UPDATE' WHERE deletedAt IS NULL AND syncState = 'SYNCED'")
+    suspend fun markAllSyncedAsPending()
+
     @Delete
     suspend fun deleteTask(task: TaskEntity)
 }

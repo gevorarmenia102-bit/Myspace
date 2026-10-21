@@ -2,6 +2,11 @@ package com.example.myspacepersonalhub.core.sync
 
 object DefaultCloudConfig {
     const val DEFAULT_FIREBASE_URL = "https://myspace-e0362-default-rtdb.firebaseio.com"
+    const val DEFAULT_FIREBASE_PROJECT_ID = "myspace-e0362"
+    const val DEFAULT_FIREBASE_APP_ID = "1:599181823063:android:9d89b9c32ebbb6447c6712"
+    const val DEFAULT_FIREBASE_API_KEY = "AIzaSyDxjI9CMlGHJzPeOvmXTR24S2g-cF-SdVI"
+    const val DEFAULT_FIREBASE_GCM_SENDER_ID = "599181823063"
+
     const val DEFAULT_GITHUB_OWNER = "gevorarmenia102-bit"
     const val DEFAULT_GITHUB_REPO = "Myspace"
     const val DEFAULT_GITHUB_BRANCH = "main"

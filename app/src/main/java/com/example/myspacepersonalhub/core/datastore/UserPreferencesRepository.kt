@@ -25,7 +25,8 @@ data class UserPreferences(
     val githubRepo: String? = null,
     val githubBranch: String = "main",
     val firebaseDatabaseUrl: String? = null,
-    val realtimeSyncEnabled: Boolean = true
+    val realtimeSyncEnabled: Boolean = true,
+    val hubMigrationV2: Boolean = false
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -44,6 +45,7 @@ class UserPreferencesRepository(private val context: Context) {
         val GITHUB_BRANCH = stringPreferencesKey("github_branch")
         val FIREBASE_DATABASE_URL = stringPreferencesKey("firebase_database_url")
         val REALTIME_SYNC_ENABLED = booleanPreferencesKey("realtime_sync_enabled")
+        val HUB_MIGRATION_V2 = booleanPreferencesKey("hub_migration_v2")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data
@@ -61,7 +63,6 @@ class UserPreferencesRepository(private val context: Context) {
             } catch (_: Exception) {
                 ThemeMode.DARK
             }
-
             UserPreferences(
                 themeMode = themeMode,
                 defaultCurrency = preferences[PreferencesKeys.DEFAULT_CURRENCY] ?: "USD",
@@ -76,7 +77,8 @@ class UserPreferencesRepository(private val context: Context) {
                 githubRepo = preferences[PreferencesKeys.GITHUB_REPO],
                 githubBranch = preferences[PreferencesKeys.GITHUB_BRANCH] ?: "main",
                 firebaseDatabaseUrl = preferences[PreferencesKeys.FIREBASE_DATABASE_URL],
-                realtimeSyncEnabled = preferences[PreferencesKeys.REALTIME_SYNC_ENABLED] ?: true
+                realtimeSyncEnabled = preferences[PreferencesKeys.REALTIME_SYNC_ENABLED] ?: true,
+                hubMigrationV2 = preferences[PreferencesKeys.HUB_MIGRATION_V2] ?: false
             )
         }
 
@@ -150,6 +152,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setRealtimeSyncEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.REALTIME_SYNC_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setHubMigrationV2Done(done: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HUB_MIGRATION_V2] = done
         }
     }
 }

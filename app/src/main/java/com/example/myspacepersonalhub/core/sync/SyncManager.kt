@@ -65,21 +65,19 @@ class SyncManager(
 
     suspend fun getEffectiveDatabase(): FirebaseDatabase? = withContext(Dispatchers.IO) {
         val prefs = preferencesRepository.userPreferencesFlow.first()
+        val dbUrl = prefs.firebaseDatabaseUrl?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_FIREBASE_URL
         try {
-            if (!prefs.firebaseDatabaseUrl.isNullOrBlank()) {
-                if (FirebaseApp.getApps(context).isEmpty()) {
-                    val options = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId(context.packageName)
-                        .setProjectId("myspace-hub")
-                        .setDatabaseUrl(prefs.firebaseDatabaseUrl)
-                        .build()
-                    FirebaseApp.initializeApp(context, options)
-                }
-                return@withContext FirebaseDatabase.getInstance(prefs.firebaseDatabaseUrl)
-            } else if (isFirebaseConfigured()) {
-                return@withContext FirebaseDatabase.getInstance()
+            if (FirebaseApp.getApps(context).isEmpty()) {
+                val options = com.google.firebase.FirebaseOptions.Builder()
+                    .setApplicationId(DefaultCloudConfig.DEFAULT_FIREBASE_APP_ID)
+                    .setApiKey(DefaultCloudConfig.DEFAULT_FIREBASE_API_KEY)
+                    .setProjectId(DefaultCloudConfig.DEFAULT_FIREBASE_PROJECT_ID)
+                    .setGcmSenderId(DefaultCloudConfig.DEFAULT_FIREBASE_GCM_SENDER_ID)
+                    .setDatabaseUrl(dbUrl)
+                    .build()
+                FirebaseApp.initializeApp(context, options)
             }
-            null
+            FirebaseDatabase.getInstance(dbUrl)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get FirebaseDatabase instance", e)
             null
@@ -299,54 +297,82 @@ class SyncManager(
         Log.d(TAG, "Stopped Realtime Firebase sync")
     }
 
-    private fun handleRemoteContactChange(snapshot: DataSnapshot) {
-        scope.launch {
-            try {
-                val id = snapshot.key ?: return@launch
-                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
-                val local = database.contactDao().getContactByIdDirect(id)
+    private suspend fun processRemoteContact(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.contactDao().getContactByIdDirect(id)
 
-                // If local is newer and pending sync, skip remote overwrite
-                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
-                    return@launch
-                }
+            // If local is newer and pending sync, skip remote overwrite
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
+            }
 
-                val displayName = snapshot.child("displayName").getValue(String::class.java) ?: "Unnamed"
-                val email = snapshot.child("email").getValue(String::class.java)
-                val company = snapshot.child("company").getValue(String::class.java)
-                val jobTitle = snapshot.child("jobTitle").getValue(String::class.java)
-                val birthday = snapshot.child("birthday").getValue(String::class.java)
-                val personalNotes = snapshot.child("personalNotes").getValue(String::class.java)
-                val isFavorite = snapshot.child("isFavorite").getValue(Boolean::class.java) ?: false
-                val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
-                val profileImageStoragePath = snapshot.child("profileImageStoragePath").getValue(String::class.java)
-                val addressLine1 = snapshot.child("addressLine1").getValue(String::class.java)
-                val addressLine2 = snapshot.child("addressLine2").getValue(String::class.java)
-                val city = snapshot.child("city").getValue(String::class.java)
-                val region = snapshot.child("region").getValue(String::class.java)
-                val postalCode = snapshot.child("postalCode").getValue(String::class.java)
-                val country = snapshot.child("country").getValue(String::class.java)
+            val displayName = snapshot.child("displayName").getValue(String::class.java) ?: "Unnamed"
+            val email = snapshot.child("email").getValue(String::class.java)
+            val company = snapshot.child("company").getValue(String::class.java)
+            val jobTitle = snapshot.child("jobTitle").getValue(String::class.java)
+            val birthday = snapshot.child("birthday").getValue(String::class.java)
+            val personalNotes = snapshot.child("personalNotes").getValue(String::class.java)
+            val isFavorite = snapshot.child("isFavorite").getValue(Boolean::class.java) ?: false
+            val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
+            val profileImageStoragePath = snapshot.child("profileImageStoragePath").getValue(String::class.java)
+            val addressLine1 = snapshot.child("addressLine1").getValue(String::class.java)
+            val addressLine2 = snapshot.child("addressLine2").getValue(String::class.java)
+            val city = snapshot.child("city").getValue(String::class.java)
+            val region = snapshot.child("region").getValue(String::class.java)
+            val postalCode = snapshot.child("postalCode").getValue(String::class.java)
+            val country = snapshot.child("country").getValue(String::class.java)
 
-                // Parse phone numbers
-                val phoneNumbers = mutableListOf<PhoneNumber>()
-                val phonesSnapshot = snapshot.child("phoneNumbers")
-                if (phonesSnapshot.exists()) {
-                    for (phoneSnap in phonesSnapshot.children) {
-                        val num = phoneSnap.child("number").getValue(String::class.java)
-                        if (!num.isNullOrBlank()) {
-                            val label = phoneSnap.child("label").getValue(String::class.java) ?: "Mobile"
-                            val isPrimary = phoneSnap.child("isPrimary").getValue(Boolean::class.java) ?: false
-                            phoneNumbers.add(PhoneNumber(id = phoneSnap.key ?: UUID.randomUUID().toString(), number = num, label = label, isPrimary = isPrimary))
-                        }
+            // Parse phone numbers
+            val phoneNumbers = mutableListOf<PhoneNumber>()
+            val phonesSnapshot = snapshot.child("phoneNumbers")
+            if (phonesSnapshot.exists()) {
+                for (phoneSnap in phonesSnapshot.children) {
+                    val num = phoneSnap.child("number").getValue(String::class.java)
+                    if (!num.isNullOrBlank()) {
+                        val label = phoneSnap.child("label").getValue(String::class.java) ?: "Mobile"
+                        val isPrimary = phoneSnap.child("isPrimary").getValue(Boolean::class.java) ?: false
+                        phoneNumbers.add(PhoneNumber(id = phoneSnap.key ?: UUID.randomUUID().toString(), number = num, label = label, isPrimary = isPrimary))
                     }
                 }
+            }
 
-                var localAvatarPath = local?.profileImageLocalPath
+            var localAvatarPath = local?.profileImageLocalPath
+            val avatarFile = File(File(context.filesDir, "avatars"), "avatar_${id}.jpg")
+            if (localAvatarPath.isNullOrBlank() && avatarFile.exists() && avatarFile.length() > 0L) {
+                localAvatarPath = avatarFile.absolutePath
+            }
 
-                // Check if avatar needs to be downloaded from GitHub
-                if (!profileImageStoragePath.isNullOrBlank()) {
-                    val avatarFile = File(File(context.filesDir, "avatars"), "avatar_${id}.jpg")
-                    if (!avatarFile.exists() || avatarFile.length() == 0L) {
+            // 1. Immediately insert/update Contact in Room so user sees it instantly
+            val updatedContact = ContactEntity(
+                id = id,
+                displayName = displayName,
+                email = email,
+                company = company,
+                jobTitle = jobTitle,
+                birthday = birthday,
+                personalNotes = personalNotes,
+                isFavorite = isFavorite,
+                isPinned = isPinned,
+                profileImageLocalPath = localAvatarPath,
+                profileImageStoragePath = profileImageStoragePath,
+                addressLine1 = addressLine1,
+                addressLine2 = addressLine2,
+                city = city,
+                region = region,
+                postalCode = postalCode,
+                country = country,
+                phoneNumbers = phoneNumbers,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.contactDao().insertContact(updatedContact)
+
+            // 2. Asynchronously download avatar from GitHub without delaying contact display
+            if (!profileImageStoragePath.isNullOrBlank() && (localAvatarPath.isNullOrBlank() || !File(localAvatarPath).exists())) {
+                scope.launch(Dispatchers.IO) {
+                    try {
                         val prefs = preferencesRepository.userPreferencesFlow.first()
                         val dlToken = prefs.githubToken?.ifBlank { null } ?: DefaultCloudConfig.getDefaultGitHubToken()
                         val dlOwner = prefs.githubOwner?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_OWNER
@@ -360,161 +386,156 @@ class SyncManager(
                             repo = dlRepo,
                             branch = dlBranch
                         )
-                        if (dlResult.isSuccess) {
-                            localAvatarPath = avatarFile.absolutePath
+                        if (dlResult.isSuccess && avatarFile.exists() && avatarFile.length() > 0L) {
+                            database.contactDao().insertContact(
+                                updatedContact.copy(profileImageLocalPath = avatarFile.absolutePath)
+                            )
                         }
-                    } else {
-                        localAvatarPath = avatarFile.absolutePath
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Background avatar download failed for contact $id: ${ex.message}")
                     }
                 }
-
-                val updatedContact = ContactEntity(
-                    id = id,
-                    displayName = displayName,
-                    email = email,
-                    company = company,
-                    jobTitle = jobTitle,
-                    birthday = birthday,
-                    personalNotes = personalNotes,
-                    isFavorite = isFavorite,
-                    isPinned = isPinned,
-                    profileImageLocalPath = localAvatarPath,
-                    profileImageStoragePath = profileImageStoragePath,
-                    addressLine1 = addressLine1,
-                    addressLine2 = addressLine2,
-                    city = city,
-                    region = region,
-                    postalCode = postalCode,
-                    country = country,
-                    phoneNumbers = phoneNumbers,
-                    updatedAt = remoteUpdatedAt,
-                    syncState = SyncState.SYNCED
-                )
-
-                database.contactDao().insertContact(updatedContact)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling remote contact", e)
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote contact", e)
+        }
+    }
+
+    private fun handleRemoteContactChange(snapshot: DataSnapshot) {
+        scope.launch {
+            processRemoteContact(snapshot)
+        }
+    }
+
+    private suspend fun processRemoteNote(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.noteDao().getNoteByIdDirect(id)
+
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
+            }
+
+            val title = snapshot.child("title").getValue(String::class.java) ?: ""
+            val body = snapshot.child("body").getValue(String::class.java) ?: ""
+            val category = snapshot.child("category").getValue(String::class.java) ?: "General"
+            val isJournal = snapshot.child("isJournal").getValue(Boolean::class.java) ?: false
+            val journalMood = snapshot.child("journalMood").getValue(String::class.java)
+            val journalDate = snapshot.child("journalDate").getValue(String::class.java)
+            val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
+            val isFavorite = snapshot.child("isFavorite").getValue(Boolean::class.java) ?: false
+            val inTrash = snapshot.child("inTrash").getValue(Boolean::class.java) ?: false
+
+            val note = NoteEntity(
+                id = id,
+                title = title,
+                body = body,
+                category = category,
+                isJournal = isJournal,
+                journalMood = journalMood,
+                journalDate = journalDate,
+                isPinned = isPinned,
+                isFavorite = isFavorite,
+                inTrash = inTrash,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.noteDao().insertNote(note)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote note", e)
         }
     }
 
     private fun handleRemoteNoteChange(snapshot: DataSnapshot) {
         scope.launch {
-            try {
-                val id = snapshot.key ?: return@launch
-                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
-                val local = database.noteDao().getNoteByIdDirect(id)
+            processRemoteNote(snapshot)
+        }
+    }
 
-                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
-                    return@launch
-                }
+    private suspend fun processRemoteTask(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.taskDao().getTaskByIdDirect(id)
 
-                val title = snapshot.child("title").getValue(String::class.java) ?: ""
-                val body = snapshot.child("body").getValue(String::class.java) ?: ""
-                val category = snapshot.child("category").getValue(String::class.java) ?: "General"
-                val isJournal = snapshot.child("isJournal").getValue(Boolean::class.java) ?: false
-                val journalMood = snapshot.child("journalMood").getValue(String::class.java)
-                val journalDate = snapshot.child("journalDate").getValue(String::class.java)
-                val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
-                val isFavorite = snapshot.child("isFavorite").getValue(Boolean::class.java) ?: false
-                val inTrash = snapshot.child("inTrash").getValue(Boolean::class.java) ?: false
-
-                val note = NoteEntity(
-                    id = id,
-                    title = title,
-                    body = body,
-                    category = category,
-                    isJournal = isJournal,
-                    journalMood = journalMood,
-                    journalDate = journalDate,
-                    isPinned = isPinned,
-                    isFavorite = isFavorite,
-                    inTrash = inTrash,
-                    updatedAt = remoteUpdatedAt,
-                    syncState = SyncState.SYNCED
-                )
-                database.noteDao().insertNote(note)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling remote note", e)
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
             }
+
+            val title = snapshot.child("title").getValue(String::class.java) ?: ""
+            val description = snapshot.child("description").getValue(String::class.java)
+            val dueAt = snapshot.child("dueAt").getValue(Long::class.java)
+            val priorityStr = snapshot.child("priority").getValue(String::class.java) ?: "MEDIUM"
+            val statusStr = snapshot.child("status").getValue(String::class.java) ?: "TODO"
+            val completedAt = snapshot.child("completedAt").getValue(Long::class.java)
+            val recurrenceRule = snapshot.child("recurrenceRule").getValue(String::class.java)
+
+            val task = TaskEntity(
+                id = id,
+                title = title,
+                description = description,
+                dueAt = if (dueAt != null && dueAt > 0) dueAt else null,
+                priority = try { Priority.valueOf(priorityStr) } catch (_: Exception) { Priority.MEDIUM },
+                status = try { TaskStatus.valueOf(statusStr) } catch (_: Exception) { TaskStatus.TODO },
+                completedAt = if (completedAt != null && completedAt > 0) completedAt else null,
+                recurrenceRule = recurrenceRule,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.taskDao().insertTask(task)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote task", e)
         }
     }
 
     private fun handleRemoteTaskChange(snapshot: DataSnapshot) {
         scope.launch {
-            try {
-                val id = snapshot.key ?: return@launch
-                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
-                val local = database.taskDao().getTaskByIdDirect(id)
+            processRemoteTask(snapshot)
+        }
+    }
 
-                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
-                    return@launch
-                }
+    private suspend fun processRemoteTransaction(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.moneyDao().getAllTransactions().first().find { it.id == id }
 
-                val title = snapshot.child("title").getValue(String::class.java) ?: ""
-                val description = snapshot.child("description").getValue(String::class.java)
-                val dueAt = snapshot.child("dueAt").getValue(Long::class.java)
-                val priorityStr = snapshot.child("priority").getValue(String::class.java) ?: "MEDIUM"
-                val statusStr = snapshot.child("status").getValue(String::class.java) ?: "TODO"
-                val completedAt = snapshot.child("completedAt").getValue(Long::class.java)
-                val recurrenceRule = snapshot.child("recurrenceRule").getValue(String::class.java)
-
-                val task = TaskEntity(
-                    id = id,
-                    title = title,
-                    description = description,
-                    dueAt = if (dueAt != null && dueAt > 0) dueAt else null,
-                    priority = try { Priority.valueOf(priorityStr) } catch (_: Exception) { Priority.MEDIUM },
-                    status = try { TaskStatus.valueOf(statusStr) } catch (_: Exception) { TaskStatus.TODO },
-                    completedAt = if (completedAt != null && completedAt > 0) completedAt else null,
-                    recurrenceRule = recurrenceRule,
-                    updatedAt = remoteUpdatedAt,
-                    syncState = SyncState.SYNCED
-                )
-                database.taskDao().insertTask(task)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling remote task", e)
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
             }
+
+            val typeStr = snapshot.child("type").getValue(String::class.java) ?: "EXPENSE"
+            val amountMinorUnits = snapshot.child("amountMinorUnits").getValue(Long::class.java) ?: 0L
+            val currencyCode = snapshot.child("currencyCode").getValue(String::class.java) ?: "USD"
+            val categoryId = snapshot.child("categoryId").getValue(String::class.java) ?: "General"
+            val title = snapshot.child("title").getValue(String::class.java) ?: ""
+            val transactionDate = snapshot.child("transactionDate").getValue(Long::class.java) ?: System.currentTimeMillis()
+            val paymentMethod = snapshot.child("paymentMethod").getValue(String::class.java)
+            val notes = snapshot.child("notes").getValue(String::class.java)
+
+            val tx = TransactionEntity(
+                id = id,
+                type = try { TransactionType.valueOf(typeStr) } catch (_: Exception) { TransactionType.EXPENSE },
+                amountMinorUnits = amountMinorUnits,
+                currencyCode = currencyCode,
+                categoryId = categoryId,
+                title = title,
+                transactionDate = transactionDate,
+                paymentMethod = paymentMethod,
+                notes = notes,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.moneyDao().insertTransaction(tx)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote transaction", e)
         }
     }
 
     private fun handleRemoteTransactionChange(snapshot: DataSnapshot) {
         scope.launch {
-            try {
-                val id = snapshot.key ?: return@launch
-                val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
-                val local = database.moneyDao().getAllTransactions().first().find { it.id == id }
-
-                if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
-                    return@launch
-                }
-
-                val typeStr = snapshot.child("type").getValue(String::class.java) ?: "EXPENSE"
-                val amountMinorUnits = snapshot.child("amountMinorUnits").getValue(Long::class.java) ?: 0L
-                val currencyCode = snapshot.child("currencyCode").getValue(String::class.java) ?: "USD"
-                val categoryId = snapshot.child("categoryId").getValue(String::class.java) ?: "General"
-                val title = snapshot.child("title").getValue(String::class.java) ?: ""
-                val transactionDate = snapshot.child("transactionDate").getValue(Long::class.java) ?: System.currentTimeMillis()
-                val paymentMethod = snapshot.child("paymentMethod").getValue(String::class.java)
-                val notes = snapshot.child("notes").getValue(String::class.java)
-
-                val tx = TransactionEntity(
-                    id = id,
-                    type = try { TransactionType.valueOf(typeStr) } catch (_: Exception) { TransactionType.EXPENSE },
-                    amountMinorUnits = amountMinorUnits,
-                    currencyCode = currencyCode,
-                    categoryId = categoryId,
-                    title = title,
-                    transactionDate = transactionDate,
-                    paymentMethod = paymentMethod,
-                    notes = notes,
-                    updatedAt = remoteUpdatedAt,
-                    syncState = SyncState.SYNCED
-                )
-                database.moneyDao().insertTransaction(tx)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling remote transaction", e)
-            }
+            processRemoteTransaction(snapshot)
         }
     }
 
@@ -589,13 +610,38 @@ class SyncManager(
         }
 
         try {
-            _syncStatus.value = CloudSyncStatus.Syncing("Pushing pending changes...")
+            _syncStatus.value = CloudSyncStatus.Syncing("Synchronizing Personal Hub...")
             val prefs = preferencesRepository.userPreferencesFlow.first()
             val effectiveToken = prefs.githubToken?.ifBlank { null } ?: DefaultCloudConfig.getDefaultGitHubToken()
             val effectiveOwner = prefs.githubOwner?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_OWNER
             val effectiveRepo = prefs.githubRepo?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_REPO
             val effectiveBranch = prefs.githubBranch.ifBlank { DefaultCloudConfig.DEFAULT_GITHUB_BRANCH }
             val userNode = db.reference.child("users").child(uid)
+
+            // 0. Pull all remote records from Firebase into Room DB
+            try {
+                val remoteContactsSnap = userNode.child("contacts").get().await()
+                for (child in remoteContactsSnap.children) {
+                    processRemoteContact(child)
+                }
+
+                val remoteNotesSnap = userNode.child("notes").get().await()
+                for (child in remoteNotesSnap.children) {
+                    processRemoteNote(child)
+                }
+
+                val remoteTasksSnap = userNode.child("tasks").get().await()
+                for (child in remoteTasksSnap.children) {
+                    processRemoteTask(child)
+                }
+
+                val remoteTxSnap = userNode.child("transactions").get().await()
+                for (child in remoteTxSnap.children) {
+                    processRemoteTransaction(child)
+                }
+            } catch (pullEx: Exception) {
+                Log.w(TAG, "Pulling remote cloud records failed: ${pullEx.message}")
+            }
 
             // 1. Sync Pending Contacts (Large files -> GitHub, Text -> Firebase)
             val pendingContacts = database.contactDao().getPendingSyncContacts()

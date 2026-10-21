@@ -63,35 +63,17 @@ class MySpaceApplication : Application() {
         // 2. Safe Firebase initialization
         try {
             if (FirebaseApp.getApps(this).isEmpty()) {
-                try {
-                    val inputStream = assets.open("google-services.json")
-                    val jsonStr = inputStream.bufferedReader().use { it.readText() }
-                    val jsonObj = org.json.JSONObject(jsonStr)
-                    val projectInfo = jsonObj.getJSONObject("project_info")
-                    val clientObj = jsonObj.getJSONArray("client").getJSONObject(0)
-                    val apiKey = clientObj.getJSONArray("api_key").getJSONObject(0).getString("current_key")
-                    val appId = clientObj.getJSONObject("client_info").getString("mobilesdk_app_id")
-                    val dbUrl = projectInfo.optString("firebase_url")
-                    val projectId = projectInfo.getString("project_id")
-                    val storageBucket = projectInfo.optString("storage_bucket")
-
-                    val options = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId(appId)
-                        .setApiKey(apiKey)
-                        .setProjectId(projectId)
-                        .apply {
-                            if (dbUrl.isNotBlank()) setDatabaseUrl(dbUrl)
-                            if (storageBucket.isNotBlank()) setStorageBucket(storageBucket)
-                        }
-                        .build()
-
-                    FirebaseApp.initializeApp(this, options)
-                } catch (_: Exception) {
-                    FirebaseApp.initializeApp(this)
-                }
+                val options = com.google.firebase.FirebaseOptions.Builder()
+                    .setApplicationId(com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_FIREBASE_APP_ID)
+                    .setApiKey(com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_FIREBASE_API_KEY)
+                    .setProjectId(com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_FIREBASE_PROJECT_ID)
+                    .setGcmSenderId(com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_FIREBASE_GCM_SENDER_ID)
+                    .setDatabaseUrl(com.example.myspacepersonalhub.core.sync.DefaultCloudConfig.DEFAULT_FIREBASE_URL)
+                    .build()
+                FirebaseApp.initializeApp(this, options)
             }
         } catch (_: Exception) {
-            // Safe fallback when google-services.json is not configured
+            try { FirebaseApp.initializeApp(this) } catch (_: Exception) {}
         }
 
         // 3. Initialize Core Singletons & Repositories
@@ -112,7 +94,7 @@ class MySpaceApplication : Application() {
         // 4. Schedule Background Periodic Sync via WorkManager
         schedulePeriodicSync()
 
-        // 5. Start Realtime Cloud Sync if enabled
+        // 5. Start Realtime Cloud Sync and pull/push on startup
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             val prefs = preferencesRepository.userPreferencesFlow.first()
             if (prefs.firebaseDatabaseUrl.isNullOrBlank()) {
@@ -130,8 +112,29 @@ class MySpaceApplication : Application() {
                     branch = currentBranch
                 )
             }
+
+            // One-time local data migration to unified hub
+            if (!prefs.hubMigrationV2) {
+                try {
+                    database.contactDao().markAllSyncedAsPending()
+                    database.noteDao().markAllSyncedAsPending()
+                    database.taskDao().markAllSyncedAsPending()
+                    database.moneyDao().markAllSyncedAsPending()
+                    preferencesRepository.setHubMigrationV2Done(true)
+                } catch (e: Exception) {
+                    android.util.Log.w("MySpaceApp", "Migration mark failed: ${e.message}")
+                }
+            }
+
             if (prefs.realtimeSyncEnabled) {
                 syncManager.startRealtimeSync()
+            }
+
+            // Immediately pull any new remote changes and push any pending local items
+            try {
+                syncManager.syncNow()
+            } catch (e: Exception) {
+                android.util.Log.w("MySpaceApp", "Startup syncNow failed: ${e.message}")
             }
         }
     }
