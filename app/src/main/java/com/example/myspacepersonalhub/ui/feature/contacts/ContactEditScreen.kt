@@ -634,21 +634,18 @@ fun ContactEditScreen(
                             )
 
                             // Remove button
-                            IconButton(
+                            CircleDeleteButton(
                                 onClick = {
                                     if (phoneEditItems.size > 1) {
                                         phoneEditItems = phoneEditItems.filterIndexed { i, _ -> i != index }
                                     } else {
                                         phoneEditItems = listOf(item.copy(nationalNumber = ""))
                                     }
-                                }
-                            ) {
-                                Icon(
-                                    Icons.Default.RemoveCircleOutline,
-                                    contentDescription = "Remove",
-                                    tint = MaterialTheme.colorScheme.outline
-                                )
-                            }
+                                },
+                                size = 32.dp,
+                                iconSize = 15.dp,
+                                contentDescription = "Remove Phone"
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
@@ -730,32 +727,30 @@ fun ContactEditScreen(
                                 val hasDigits = digitCount >= 5
 
                                 // WhatsApp quick launch
-                                IconButton(
-                                    onClick = { IntentUtils.openWhatsApp(context, fullNumber) },
-                                    enabled = hasDigits,
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Chat,
-                                        contentDescription = "WhatsApp",
-                                        tint = if (hasDigits) AccentWhatsApp else MaterialTheme.colorScheme.outline,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                CircleIconButton(
+                                    icon = Icons.Default.Chat,
+                                    contentDescription = "WhatsApp",
+                                    onClick = { if (hasDigits) IntentUtils.openWhatsApp(context, fullNumber) },
+                                    size = 32.dp,
+                                    iconSize = 16.dp,
+                                    tint = if (hasDigits) AccentWhatsApp else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                    containerColor = if (hasDigits) AccentWhatsApp.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    borderColor = if (hasDigits) AccentWhatsApp.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                                )
+
+                                Spacer(modifier = Modifier.width(6.dp))
 
                                 // Telegram quick launch
-                                IconButton(
-                                    onClick = { IntentUtils.openTelegram(context, fullNumber) },
-                                    enabled = hasDigits,
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Send,
-                                        contentDescription = "Telegram",
-                                        tint = if (hasDigits) AccentTelegram else MaterialTheme.colorScheme.outline,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                CircleIconButton(
+                                    icon = Icons.Default.Send,
+                                    contentDescription = "Telegram",
+                                    onClick = { if (hasDigits) IntentUtils.openTelegram(context, fullNumber) },
+                                    size = 32.dp,
+                                    iconSize = 16.dp,
+                                    tint = if (hasDigits) AccentTelegram else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                    containerColor = if (hasDigits) AccentTelegram.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    borderColor = if (hasDigits) AccentTelegram.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                                )
 
                                 // Label dropdown/selector
                                 var showLabelMenu by remember { mutableStateOf(false) }

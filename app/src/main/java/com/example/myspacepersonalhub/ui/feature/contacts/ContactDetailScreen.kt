@@ -484,9 +484,16 @@ private fun PhoneDetailCardRow(
                 colors = AssistChipDefaults.assistChipColors(containerColor = AccentTelegram.copy(alpha = 0.12f))
             )
 
-            IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-            }
+            CircleIconButton(
+                icon = Icons.Default.ContentCopy,
+                contentDescription = "Copy",
+                onClick = onCopy,
+                size = 32.dp,
+                iconSize = 15.dp,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            )
         }
         HorizontalDivider(modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
     }
@@ -536,8 +543,15 @@ private fun DetailFieldRow(
             Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
         }
-        IconButton(onClick = onCopyClick, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-        }
+        CircleIconButton(
+            icon = Icons.Default.ContentCopy,
+            contentDescription = "Copy",
+            onClick = onCopyClick,
+            size = 32.dp,
+            iconSize = 15.dp,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+        )
     }
 }

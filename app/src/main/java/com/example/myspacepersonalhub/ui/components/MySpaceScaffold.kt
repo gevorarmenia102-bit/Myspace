@@ -1,5 +1,7 @@
 package com.example.myspacepersonalhub.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -50,12 +52,13 @@ fun MySpaceScaffold(
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
                     )
                 ) {
-                    NavigationBar(
-                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        tonalElevation = 0.dp,
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        modifier = Modifier.height(64.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         val navItems = listOf(
                             Triple(Screen.Dashboard, "Home", Icons.Default.Home),
@@ -67,61 +70,21 @@ fun MySpaceScaffold(
 
                         navItems.forEach { (screen, label, icon) ->
                             val isSelected = currentScreen::class == screen::class
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = { onNavigate(screen) },
-                                icon = {
-                                    Icon(
-                                        icon,
-                                        contentDescription = label,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        label,
-                                        fontSize = 10.sp,
-                                        maxLines = 1,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                )
+                            MySpaceNavItem(
+                                label = label,
+                                icon = icon,
+                                isSelected = isSelected,
+                                onClick = { onNavigate(screen) }
                             )
                         }
 
                         // More item
                         val isMoreSelected = currentScreen in listOf(Screen.Vault, Screen.Tracker, Screen.QuickAccess, Screen.Settings)
-                        NavigationBarItem(
-                            selected = isMoreSelected,
-                            onClick = { showMoreSheet = true },
-                            icon = {
-                                Icon(
-                                    Icons.Default.Widgets,
-                                    contentDescription = "More",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = {
-                                Text(
-                                    "More",
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    fontWeight = if (isMoreSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            )
+                        MySpaceNavItem(
+                            label = "More",
+                            icon = Icons.Default.Widgets,
+                            isSelected = isMoreSelected,
+                            onClick = { showMoreSheet = true }
                         )
                     }
                 }
@@ -241,3 +204,67 @@ private data class MoreModuleItem(
     val color: androidx.compose.ui.graphics.Color,
     val target: Screen
 )
+
+@Composable
+private fun RowScope.MySpaceNavItem(
+    label: String,
+    icon: ImageVector,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+
+    val animatedIndicatorColor by animateColorAsState(
+        targetValue = if (isSelected) primaryColor.copy(alpha = 0.16f) else androidx.compose.ui.graphics.Color.Transparent,
+        animationSpec = tween(200),
+        label = "nav_indicator"
+    )
+    val animatedIconColor by animateColorAsState(
+        targetValue = if (isSelected) primaryColor else unselectedColor,
+        animationSpec = tween(200),
+        label = "nav_icon_color"
+    )
+
+    Column(
+        modifier = modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(42.dp)
+                .height(28.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(animatedIndicatorColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(20.dp),
+                tint = animatedIconColor
+            )
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            maxLines = 1,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = animatedIconColor
+        )
+    }
+}
+

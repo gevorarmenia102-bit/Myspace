@@ -359,50 +359,53 @@ fun ContactItemCard(
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 // Quick WhatsApp launcher if primary phone is available
                 val primaryPhone = contact.phoneNumbers.firstOrNull()?.number
                 if (!primaryPhone.isNullOrBlank()) {
-                    IconButton(
+                    CircleIconButton(
+                        icon = Icons.Default.Chat,
+                        contentDescription = "WhatsApp",
                         onClick = { IntentUtils.openWhatsApp(context, primaryPhone) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Chat,
-                            contentDescription = "WhatsApp",
-                            tint = AccentWhatsApp,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                        size = 32.dp,
+                        iconSize = 16.dp,
+                        tint = AccentWhatsApp,
+                        containerColor = AccentWhatsApp.copy(alpha = 0.12f),
+                        borderColor = AccentWhatsApp.copy(alpha = 0.28f)
+                    )
                 }
 
                 // Maps Icon beside Star if address is set
                 if (contact.hasAddress()) {
-                    IconButton(
+                    CircleIconButton(
+                        icon = Icons.Default.Place,
+                        contentDescription = "Open in Maps",
                         onClick = {
                             contact.fullAddress()?.let { address ->
                                 IntentUtils.openMapAddress(context, address)
                             }
                         },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Place,
-                            contentDescription = "Open in Maps",
-                            tint = AccentBlue,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = if (contact.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                        contentDescription = if (contact.isFavorite) "Remove from favorites" else "Add to favorites",
-                        tint = if (contact.isFavorite) AccentAmber else MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(18.dp)
+                        size = 32.dp,
+                        iconSize = 16.dp,
+                        tint = AccentBlue,
+                        containerColor = AccentBlue.copy(alpha = 0.12f),
+                        borderColor = AccentBlue.copy(alpha = 0.28f)
                     )
                 }
+
+                CircleIconButton(
+                    icon = if (contact.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = if (contact.isFavorite) "Remove from favorites" else "Add to favorites",
+                    onClick = onToggleFavorite,
+                    size = 32.dp,
+                    iconSize = 16.dp,
+                    tint = if (contact.isFavorite) AccentAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    containerColor = if (contact.isFavorite) AccentAmber.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    borderColor = if (contact.isFavorite) AccentAmber.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
             }
         }
     }
