@@ -87,28 +87,27 @@ class SyncManager(
     }
 
     suspend fun getCurrentUserUid(): String? = withContext(Dispatchers.IO) {
-        if (!isFirebaseConfigured()) {
-            val prefs = preferencesRepository.userPreferencesFlow.first()
-            if (prefs.firebaseDatabaseUrl.isNullOrBlank()) return@withContext null
+        val prefs = preferencesRepository.userPreferencesFlow.first()
+        if (!isFirebaseConfigured() && prefs.firebaseDatabaseUrl.isNullOrBlank()) {
+            return@withContext null
         }
 
         try {
             val user = FirebaseAuth.getInstance().currentUser
             if (user != null) return@withContext user.uid
-
-            // Attempt anonymous sign-in for seamless zero-config auth
-            try {
-                val authResult = FirebaseAuth.getInstance().signInAnonymously().await()
-                return@withContext authResult.user?.uid
-            } catch (_: Exception) {
-                // If Auth is disabled in Firebase console, use unique hardware device ID
-                val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-                return@withContext androidId ?: "user_default"
-            }
         } catch (_: Exception) {
-            val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-            androidId ?: "user_default"
         }
+
+        // Multi-device shared Personal Hub:
+        // Use the shared Hub Owner / GitHub Username (e.g. "gevorarmenia102-bit")
+        // so that all personal phones with the app automatically link to the same real-time user space.
+        val effectiveOwner = prefs.githubOwner?.ifBlank { null } ?: DefaultCloudConfig.DEFAULT_GITHUB_OWNER
+        if (!effectiveOwner.isNullOrBlank()) {
+            return@withContext effectiveOwner.trim().replace(Regex("[.#$\\[\\]]"), "_")
+        }
+
+        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        androidId ?: "user_default"
     }
 
     suspend fun checkStatus() = withContext(Dispatchers.IO) {
