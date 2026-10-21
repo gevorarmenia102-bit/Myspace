@@ -240,24 +240,6 @@ fun SettingsScreen(
                             Text("Cloud Backup", fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            val intent = android.content.Intent(context, com.example.myspacepersonalhub.CloudConfigActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(36.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Cloud & GitHub Server Config", fontSize = 11.sp, color = AccentPurple, fontWeight = FontWeight.Medium)
-                    }
                 }
             }
 
