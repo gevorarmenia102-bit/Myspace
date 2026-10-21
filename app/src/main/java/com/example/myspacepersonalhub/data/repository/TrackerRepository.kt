@@ -5,13 +5,17 @@ import com.example.myspacepersonalhub.core.database.entity.GoalEntity
 import com.example.myspacepersonalhub.core.database.entity.HabitCompletionEntity
 import com.example.myspacepersonalhub.core.database.entity.HabitEntity
 import com.example.myspacepersonalhub.core.model.GoalStatus
+import com.example.myspacepersonalhub.core.model.SyncState
 import kotlinx.coroutines.flow.Flow
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-class TrackerRepository(private val trackerDao: TrackerDao) {
+class TrackerRepository(
+    private val trackerDao: TrackerDao,
+    private val onDataChanged: (() -> Unit)? = null
+) {
 
     // Habits
     fun getAllHabits(): Flow<List<HabitEntity>> = trackerDao.getAllHabits()
@@ -21,11 +25,20 @@ class TrackerRepository(private val trackerDao: TrackerDao) {
         if (trimmedName.isEmpty()) {
             return Result.failure(IllegalArgumentException("Habit name cannot be blank"))
         }
-        trackerDao.insertHabit(habit.copy(name = trimmedName, updatedAt = System.currentTimeMillis()))
+        val updated = habit.copy(
+            name = trimmedName,
+            updatedAt = System.currentTimeMillis(),
+            syncState = if (habit.syncState == SyncState.SYNCED) SyncState.PENDING_UPDATE else habit.syncState
+        )
+        trackerDao.insertHabit(updated)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
-    suspend fun deleteHabit(id: String) = trackerDao.softDeleteHabit(id)
+    suspend fun deleteHabit(id: String) {
+        trackerDao.softDeleteHabit(id)
+        onDataChanged?.invoke()
+    }
 
     fun getHabitCompletions(habitId: String): Flow<List<HabitCompletionEntity>> =
         trackerDao.getHabitCompletions(habitId)
@@ -37,14 +50,17 @@ class TrackerRepository(private val trackerDao: TrackerDao) {
         val existing = trackerDao.getCompletion(habitId, date)
         return if (existing != null) {
             trackerDao.deleteHabitCompletion(habitId, date)
+            onDataChanged?.invoke()
             false
         } else {
             val completion = HabitCompletionEntity(
                 habitId = habitId,
                 completionDate = date,
-                isCompleted = true
+                isCompleted = true,
+                updatedAt = System.currentTimeMillis()
             )
             trackerDao.insertHabitCompletion(completion)
+            onDataChanged?.invoke()
             true
         }
     }
@@ -105,14 +121,36 @@ class TrackerRepository(private val trackerDao: TrackerDao) {
         if (goal.targetValue <= 0) {
             return Result.failure(IllegalArgumentException("Target value must be greater than zero"))
         }
-        trackerDao.insertGoal(goal.copy(title = trimmedTitle, updatedAt = System.currentTimeMillis()))
+        val updated = goal.copy(
+            title = trimmedTitle,
+            updatedAt = System.currentTimeMillis(),
+            syncState = if (goal.syncState == SyncState.SYNCED) SyncState.PENDING_UPDATE else goal.syncState
+        )
+        trackerDao.insertGoal(updated)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
     suspend fun updateGoalProgress(id: String, progress: Double, target: Double) {
         val status = if (progress >= target) GoalStatus.ACHIEVED else GoalStatus.IN_PROGRESS
-        trackerDao.updateGoalProgress(id, progress)
+        val existing = trackerDao.getGoalByIdDirect(id)
+        if (existing != null) {
+            trackerDao.updateGoal(
+                existing.copy(
+                    currentProgress = progress,
+                    status = status,
+                    updatedAt = System.currentTimeMillis(),
+                    syncState = SyncState.PENDING_UPDATE
+                )
+            )
+        } else {
+            trackerDao.updateGoalProgress(id, progress)
+        }
+        onDataChanged?.invoke()
     }
 
-    suspend fun deleteGoal(id: String) = trackerDao.softDeleteGoal(id)
+    suspend fun deleteGoal(id: String) {
+        trackerDao.softDeleteGoal(id)
+        onDataChanged?.invoke()
+    }
 }

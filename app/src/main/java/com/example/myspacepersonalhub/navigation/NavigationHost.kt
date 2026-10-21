@@ -128,10 +128,17 @@ fun NavigationHost(app: MySpaceApplication) {
                 is Screen.Vault -> VaultScreen(
                     viewModel = vaultViewModel,
                     onItemClick = { id -> navigateTo(Screen.VaultDetail(id)) },
-                    onAddItemClick = { navigateTo(Screen.VaultEdit(null)) }
+                    onAddItemClick = { navigateTo(Screen.VaultEdit(null)) },
+                    onSyncClick = { dashboardViewModel.syncNow() }
                 )
-                is Screen.Tracker -> CalendarTrackerScreen(viewModel = trackerViewModel)
-                is Screen.QuickAccess -> QuickAccessScreen(viewModel = quickAccessViewModel)
+                is Screen.Tracker -> CalendarTrackerScreen(
+                    viewModel = trackerViewModel,
+                    onSyncClick = { dashboardViewModel.syncNow() }
+                )
+                is Screen.QuickAccess -> QuickAccessScreen(
+                    viewModel = quickAccessViewModel,
+                    onSyncClick = { dashboardViewModel.syncNow() }
+                )
                 is Screen.Settings -> SettingsScreen(viewModel = settingsViewModel)
                 else -> {}
             }

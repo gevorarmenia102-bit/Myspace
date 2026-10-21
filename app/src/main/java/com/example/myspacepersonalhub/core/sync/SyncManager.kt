@@ -9,6 +9,11 @@ import com.example.myspacepersonalhub.core.database.entity.NoteEntity
 import com.example.myspacepersonalhub.core.database.entity.TaskEntity
 import com.example.myspacepersonalhub.core.database.entity.TransactionEntity
 import com.example.myspacepersonalhub.core.database.entity.BudgetEntity
+import com.example.myspacepersonalhub.core.database.entity.VaultItemEntity
+import com.example.myspacepersonalhub.core.database.entity.HabitEntity
+import com.example.myspacepersonalhub.core.database.entity.HabitCompletionEntity
+import com.example.myspacepersonalhub.core.database.entity.GoalEntity
+import com.example.myspacepersonalhub.core.database.entity.QuickAccessEntity
 import com.example.myspacepersonalhub.core.datastore.UserPreferencesRepository
 import com.example.myspacepersonalhub.core.model.*
 import com.example.myspacepersonalhub.core.storage.GitHubRepoInfo
@@ -275,6 +280,121 @@ class SyncManager(
             }
             txRef.addChildEventListener(txListener)
             activeListeners[txRef] = txListener
+
+            // 5. Listen for Realtime Vault updates
+            val vaultRef = userRef.child("vault")
+            val vaultListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteVaultChange(snapshot)
+                }
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteVaultChange(snapshot)
+                }
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        database.vaultDao().deleteVaultItemDirect(id)
+                    }
+                }
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Vault realtime listener cancelled: ${error.message}")
+                }
+            }
+            vaultRef.addChildEventListener(vaultListener)
+            activeListeners[vaultRef] = vaultListener
+
+            // 6. Listen for Realtime Habits updates
+            val habitsRef = userRef.child("habits")
+            val habitListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteHabitChange(snapshot)
+                }
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteHabitChange(snapshot)
+                }
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        database.trackerDao().deleteHabitDirect(id)
+                    }
+                }
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Habits realtime listener cancelled: ${error.message}")
+                }
+            }
+            habitsRef.addChildEventListener(habitListener)
+            activeListeners[habitsRef] = habitListener
+
+            // 7. Listen for Realtime Habit Completions updates
+            val completionsRef = userRef.child("habit_completions")
+            val completionListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteHabitCompletionChange(snapshot)
+                }
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteHabitCompletionChange(snapshot)
+                }
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        database.trackerDao().deleteHabitCompletionById(id)
+                    }
+                }
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Completions realtime listener cancelled: ${error.message}")
+                }
+            }
+            completionsRef.addChildEventListener(completionListener)
+            activeListeners[completionsRef] = completionListener
+
+            // 8. Listen for Realtime Goals updates
+            val goalsRef = userRef.child("goals")
+            val goalListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteGoalChange(snapshot)
+                }
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteGoalChange(snapshot)
+                }
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        database.trackerDao().deleteGoalDirect(id)
+                    }
+                }
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Goals realtime listener cancelled: ${error.message}")
+                }
+            }
+            goalsRef.addChildEventListener(goalListener)
+            activeListeners[goalsRef] = goalListener
+
+            // 9. Listen for Realtime Quick Access updates
+            val quickAccessRef = userRef.child("quick_access")
+            val quickAccessListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteQuickAccessChange(snapshot)
+                }
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handleRemoteQuickAccessChange(snapshot)
+                }
+                override fun onChildRemoved(snapshot: DataSnapshot) {
+                    val id = snapshot.key ?: return
+                    scope.launch {
+                        database.quickAccessDao().deleteQuickAccessItemDirect(id)
+                    }
+                }
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Quick Access realtime listener cancelled: ${error.message}")
+                }
+            }
+            quickAccessRef.addChildEventListener(quickAccessListener)
+            activeListeners[quickAccessRef] = quickAccessListener
         }
     }
 
@@ -529,6 +649,209 @@ class SyncManager(
         }
     }
 
+    private suspend fun processRemoteVaultItem(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.vaultDao().getVaultItemByIdDirect(id)
+
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
+            }
+
+            val title = snapshot.child("title").getValue(String::class.java) ?: "Encrypted Item"
+            val typeStr = snapshot.child("itemType").getValue(String::class.java) ?: VaultItemType.SECURE_NOTE.name
+            val itemType = try { VaultItemType.valueOf(typeStr) } catch (_: Exception) { VaultItemType.SECURE_NOTE }
+            val secretText = snapshot.child("encryptedSecretText").getValue(String::class.java)?.ifBlank { null }
+            val ivBase64 = snapshot.child("ivBase64").getValue(String::class.java) ?: ""
+            val encVer = snapshot.child("encryptionVersion").getValue(Int::class.java) ?: 1
+            val mimeType = snapshot.child("mimeType").getValue(String::class.java)?.ifBlank { null }
+            val fileSizeBytes = snapshot.child("fileSizeBytes").getValue(Long::class.java) ?: 0L
+            val storageObjectPath = snapshot.child("storageObjectPath").getValue(String::class.java)?.ifBlank { null }
+
+            val entity = VaultItemEntity(
+                id = id,
+                title = title,
+                itemType = itemType,
+                encryptedLocalPath = local?.encryptedLocalPath,
+                encryptedSecretText = secretText,
+                ivBase64 = ivBase64,
+                encryptionVersion = encVer,
+                mimeType = mimeType,
+                fileSizeBytes = fileSizeBytes,
+                storageObjectPath = storageObjectPath,
+                isSynced = true,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.vaultDao().insertVaultItem(entity)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote vault item", e)
+        }
+    }
+
+    private fun handleRemoteVaultChange(snapshot: DataSnapshot) {
+        scope.launch {
+            processRemoteVaultItem(snapshot)
+        }
+    }
+
+    private suspend fun processRemoteHabit(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.trackerDao().getHabitByIdDirect(id)
+
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
+            }
+
+            val name = snapshot.child("name").getValue(String::class.java) ?: ""
+            val description = snapshot.child("description").getValue(String::class.java)?.ifBlank { null }
+            val scheduleDaysSnap = snapshot.child("scheduleDays")
+            val scheduleDays = if (scheduleDaysSnap.exists()) {
+                scheduleDaysSnap.children.mapNotNull { it.getValue(Long::class.java)?.toInt() }
+            } else listOf(1, 2, 3, 4, 5, 6, 7)
+            val startDate = snapshot.child("startDate").getValue(String::class.java) ?: ""
+            val isActive = snapshot.child("isActive").getValue(Boolean::class.java) ?: true
+
+            val habit = HabitEntity(
+                id = id,
+                name = name,
+                description = description,
+                scheduleDays = if (scheduleDays.isNotEmpty()) scheduleDays else listOf(1, 2, 3, 4, 5, 6, 7),
+                startDate = startDate,
+                isActive = isActive,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.trackerDao().insertHabit(habit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote habit", e)
+        }
+    }
+
+    private fun handleRemoteHabitChange(snapshot: DataSnapshot) {
+        scope.launch {
+            processRemoteHabit(snapshot)
+        }
+    }
+
+    private suspend fun processRemoteHabitCompletion(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val habitId = snapshot.child("habitId").getValue(String::class.java) ?: return@withContext
+            val completionDate = snapshot.child("completionDate").getValue(String::class.java) ?: return@withContext
+            val isCompleted = snapshot.child("isCompleted").getValue(Boolean::class.java) ?: true
+            val note = snapshot.child("note").getValue(String::class.java)?.ifBlank { null }
+            val updatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: System.currentTimeMillis()
+
+            val completion = HabitCompletionEntity(
+                id = id,
+                habitId = habitId,
+                completionDate = completionDate,
+                isCompleted = isCompleted,
+                note = note,
+                updatedAt = updatedAt
+            )
+            database.trackerDao().insertHabitCompletion(completion)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote habit completion", e)
+        }
+    }
+
+    private fun handleRemoteHabitCompletionChange(snapshot: DataSnapshot) {
+        scope.launch {
+            processRemoteHabitCompletion(snapshot)
+        }
+    }
+
+    private suspend fun processRemoteGoal(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.trackerDao().getGoalByIdDirect(id)
+
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
+            }
+
+            val title = snapshot.child("title").getValue(String::class.java) ?: ""
+            val description = snapshot.child("description").getValue(String::class.java)?.ifBlank { null }
+            val targetValue = snapshot.child("targetValue").getValue(Double::class.java) ?: 100.0
+            val currentProgress = snapshot.child("currentProgress").getValue(Double::class.java) ?: 0.0
+            val unit = snapshot.child("unit").getValue(String::class.java) ?: "%"
+            val targetDate = snapshot.child("targetDate").getValue(String::class.java)?.ifBlank { null }
+            val statusStr = snapshot.child("status").getValue(String::class.java) ?: GoalStatus.IN_PROGRESS.name
+            val status = try { GoalStatus.valueOf(statusStr) } catch (_: Exception) { GoalStatus.IN_PROGRESS }
+
+            val goal = GoalEntity(
+                id = id,
+                title = title,
+                description = description,
+                targetValue = targetValue,
+                currentProgress = currentProgress,
+                unit = unit,
+                targetDate = targetDate,
+                status = status,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.trackerDao().insertGoal(goal)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote goal", e)
+        }
+    }
+
+    private fun handleRemoteGoalChange(snapshot: DataSnapshot) {
+        scope.launch {
+            processRemoteGoal(snapshot)
+        }
+    }
+
+    private suspend fun processRemoteQuickAccess(snapshot: DataSnapshot) = withContext(Dispatchers.IO) {
+        try {
+            val id = snapshot.key ?: return@withContext
+            val remoteUpdatedAt = snapshot.child("updatedAt").getValue(Long::class.java) ?: 0L
+            val local = database.quickAccessDao().getQuickAccessItemByIdDirect(id)
+
+            if (local != null && local.updatedAt >= remoteUpdatedAt && local.syncState != SyncState.SYNCED) {
+                return@withContext
+            }
+
+            val title = snapshot.child("title").getValue(String::class.java) ?: ""
+            val typeStr = snapshot.child("itemType").getValue(String::class.java) ?: QuickAccessType.URL.name
+            val itemType = try { QuickAccessType.valueOf(typeStr) } catch (_: Exception) { QuickAccessType.URL }
+            val value = snapshot.child("value").getValue(String::class.java) ?: ""
+            val description = snapshot.child("description").getValue(String::class.java)?.ifBlank { null }
+            val category = snapshot.child("category").getValue(String::class.java) ?: "Favorites"
+            val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
+            val sortOrder = snapshot.child("sortOrder").getValue(Int::class.java) ?: 0
+
+            val entity = QuickAccessEntity(
+                id = id,
+                title = title,
+                itemType = itemType,
+                value = value,
+                description = description,
+                category = category,
+                isPinned = isPinned,
+                sortOrder = sortOrder,
+                updatedAt = remoteUpdatedAt,
+                syncState = SyncState.SYNCED
+            )
+            database.quickAccessDao().insertQuickAccessItem(entity)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling remote quick access item", e)
+        }
+    }
+
+    private fun handleRemoteQuickAccessChange(snapshot: DataSnapshot) {
+        scope.launch {
+            processRemoteQuickAccess(snapshot)
+        }
+    }
+
     /**
      * Upload an authenticated PBKDF2 + AES-GCM encrypted database backup directly
      * to GitHub Private Repository, and save its cloud pointer in Firebase Realtime Database.
@@ -624,6 +947,31 @@ class SyncManager(
                 val remoteTxSnap = userNode.child("transactions").get().await()
                 for (child in remoteTxSnap.children) {
                     processRemoteTransaction(child)
+                }
+
+                val remoteVaultSnap = userNode.child("vault").get().await()
+                for (child in remoteVaultSnap.children) {
+                    processRemoteVaultItem(child)
+                }
+
+                val remoteHabitsSnap = userNode.child("habits").get().await()
+                for (child in remoteHabitsSnap.children) {
+                    processRemoteHabit(child)
+                }
+
+                val remoteCompletionsSnap = userNode.child("habit_completions").get().await()
+                for (child in remoteCompletionsSnap.children) {
+                    processRemoteHabitCompletion(child)
+                }
+
+                val remoteGoalsSnap = userNode.child("goals").get().await()
+                for (child in remoteGoalsSnap.children) {
+                    processRemoteGoal(child)
+                }
+
+                val remoteQASnap = userNode.child("quick_access").get().await()
+                for (child in remoteQASnap.children) {
+                    processRemoteQuickAccess(child)
                 }
             } catch (pullEx: Exception) {
                 Log.w(TAG, "Pulling remote cloud records failed: ${pullEx.message}")
@@ -783,7 +1131,112 @@ class SyncManager(
                 }
             }
 
-            // 5. Update sync timestamp in preferences
+            // 5. Sync Pending Vault Items
+            val pendingVault = database.vaultDao().getPendingSyncVaultItems()
+            for (item in pendingVault) {
+                if (item.deletedAt != null) {
+                    userNode.child("vault").child(item.id).removeValue().await()
+                    database.vaultDao().deleteVaultItemDirect(item.id)
+                } else {
+                    val map = mapOf(
+                        "id" to item.id,
+                        "title" to item.title,
+                        "itemType" to item.itemType.name,
+                        "encryptedSecretText" to (item.encryptedSecretText ?: ""),
+                        "ivBase64" to item.ivBase64,
+                        "encryptionVersion" to item.encryptionVersion,
+                        "mimeType" to (item.mimeType ?: ""),
+                        "fileSizeBytes" to item.fileSizeBytes,
+                        "storageObjectPath" to (item.storageObjectPath ?: ""),
+                        "updatedAt" to item.updatedAt
+                    )
+                    userNode.child("vault").child(item.id).setValue(map).await()
+                    database.vaultDao().updateVaultItem(item.copy(syncState = SyncState.SYNCED, isSynced = true))
+                }
+            }
+
+            // 6. Sync Pending Habits
+            val pendingHabits = database.trackerDao().getPendingSyncHabits()
+            for (habit in pendingHabits) {
+                if (habit.deletedAt != null) {
+                    userNode.child("habits").child(habit.id).removeValue().await()
+                    database.trackerDao().deleteHabitDirect(habit.id)
+                } else {
+                    val map = mapOf(
+                        "id" to habit.id,
+                        "name" to habit.name,
+                        "description" to (habit.description ?: ""),
+                        "scheduleDays" to habit.scheduleDays,
+                        "startDate" to habit.startDate,
+                        "isActive" to habit.isActive,
+                        "updatedAt" to habit.updatedAt
+                    )
+                    userNode.child("habits").child(habit.id).setValue(map).await()
+                    database.trackerDao().updateHabit(habit.copy(syncState = SyncState.SYNCED))
+                }
+            }
+
+            // 7. Sync All Habit Completions
+            val allCompletions = database.trackerDao().getAllHabitCompletionsDirect()
+            for (comp in allCompletions) {
+                val map = mapOf(
+                    "id" to comp.id,
+                    "habitId" to comp.habitId,
+                    "completionDate" to comp.completionDate,
+                    "isCompleted" to comp.isCompleted,
+                    "note" to (comp.note ?: ""),
+                    "updatedAt" to comp.updatedAt
+                )
+                userNode.child("habit_completions").child(comp.id).setValue(map).await()
+            }
+
+            // 8. Sync Pending Goals
+            val pendingGoals = database.trackerDao().getPendingSyncGoals()
+            for (goal in pendingGoals) {
+                if (goal.deletedAt != null) {
+                    userNode.child("goals").child(goal.id).removeValue().await()
+                    database.trackerDao().deleteGoalDirect(goal.id)
+                } else {
+                    val map = mapOf(
+                        "id" to goal.id,
+                        "title" to goal.title,
+                        "description" to (goal.description ?: ""),
+                        "targetValue" to goal.targetValue,
+                        "currentProgress" to goal.currentProgress,
+                        "unit" to goal.unit,
+                        "targetDate" to (goal.targetDate ?: ""),
+                        "status" to goal.status.name,
+                        "updatedAt" to goal.updatedAt
+                    )
+                    userNode.child("goals").child(goal.id).setValue(map).await()
+                    database.trackerDao().updateGoal(goal.copy(syncState = SyncState.SYNCED))
+                }
+            }
+
+            // 9. Sync Pending Quick Access Items
+            val pendingQA = database.quickAccessDao().getPendingSyncQuickAccessItems()
+            for (qa in pendingQA) {
+                if (qa.deletedAt != null) {
+                    userNode.child("quick_access").child(qa.id).removeValue().await()
+                    database.quickAccessDao().deleteQuickAccessItemDirect(qa.id)
+                } else {
+                    val map = mapOf(
+                        "id" to qa.id,
+                        "title" to qa.title,
+                        "itemType" to qa.itemType.name,
+                        "value" to qa.value,
+                        "description" to (qa.description ?: ""),
+                        "category" to qa.category,
+                        "isPinned" to qa.isPinned,
+                        "sortOrder" to qa.sortOrder,
+                        "updatedAt" to qa.updatedAt
+                    )
+                    userNode.child("quick_access").child(qa.id).setValue(map).await()
+                    database.quickAccessDao().updateQuickAccessItem(qa.copy(syncState = SyncState.SYNCED))
+                }
+            }
+
+            // 10. Update sync timestamp in preferences
             val now = System.currentTimeMillis()
             preferencesRepository.setLastSyncTimestamp(now)
             _syncStatus.value = CloudSyncStatus.Synced(now)

@@ -35,7 +35,8 @@ import java.util.Locale
 fun VaultScreen(
     viewModel: VaultViewModel,
     onItemClick: (String) -> Unit,
-    onAddItemClick: () -> Unit
+    onAddItemClick: () -> Unit,
+    onSyncClick: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -83,6 +84,12 @@ fun VaultScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        onSyncClick()
+                        com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Sync Vault", tint = AccentPurple)
+                    }
                     if (state.biometricEnabled) {
                         IconButton(onClick = viewModel::lockVault) {
                             Icon(Icons.Default.Lock, contentDescription = "Lock Vault", tint = AccentPurple)

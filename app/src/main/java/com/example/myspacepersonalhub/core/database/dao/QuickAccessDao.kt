@@ -24,6 +24,18 @@ interface QuickAccessDao {
     @Query("UPDATE quick_access SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE id = :id")
     suspend fun softDeleteQuickAccessItem(id: String, timestamp: Long = System.currentTimeMillis())
 
+    @Query("SELECT * FROM quick_access WHERE id = :id")
+    suspend fun getQuickAccessItemByIdDirect(id: String): QuickAccessEntity?
+
+    @Query("SELECT * FROM quick_access WHERE syncState != 'SYNCED'")
+    suspend fun getPendingSyncQuickAccessItems(): List<QuickAccessEntity>
+
+    @Query("UPDATE quick_access SET syncState = 'PENDING_CREATE' WHERE syncState = 'SYNCED'")
+    suspend fun markAllSyncedAsPending()
+
+    @Query("DELETE FROM quick_access WHERE id = :id")
+    suspend fun deleteQuickAccessItemDirect(id: String)
+
     @Delete
     suspend fun deleteQuickAccessItem(item: QuickAccessEntity)
 }

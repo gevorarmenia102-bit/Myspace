@@ -4,9 +4,13 @@ import android.net.Uri
 import com.example.myspacepersonalhub.core.database.dao.QuickAccessDao
 import com.example.myspacepersonalhub.core.database.entity.QuickAccessEntity
 import com.example.myspacepersonalhub.core.model.QuickAccessType
+import com.example.myspacepersonalhub.core.model.SyncState
 import kotlinx.coroutines.flow.Flow
 
-class QuickAccessRepository(private val quickAccessDao: QuickAccessDao) {
+class QuickAccessRepository(
+    private val quickAccessDao: QuickAccessDao,
+    private val onDataChanged: (() -> Unit)? = null
+) {
 
     fun getAllItems(): Flow<List<QuickAccessEntity>> = quickAccessDao.getAllQuickAccessItems()
 
@@ -35,11 +39,16 @@ class QuickAccessRepository(private val quickAccessDao: QuickAccessDao) {
             item.copy(
                 title = trimmedTitle,
                 value = trimmedVal,
-                updatedAt = System.currentTimeMillis()
+                updatedAt = System.currentTimeMillis(),
+                syncState = if (item.syncState == SyncState.SYNCED) SyncState.PENDING_UPDATE else item.syncState
             )
         )
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
-    suspend fun deleteItem(id: String) = quickAccessDao.softDeleteQuickAccessItem(id)
+    suspend fun deleteItem(id: String) {
+        quickAccessDao.softDeleteQuickAccessItem(id)
+        onDataChanged?.invoke()
+    }
 }

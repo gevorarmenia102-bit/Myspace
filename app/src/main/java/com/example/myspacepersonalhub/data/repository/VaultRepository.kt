@@ -7,12 +7,14 @@ import com.example.myspacepersonalhub.core.database.entity.VaultItemEntity
 import com.example.myspacepersonalhub.core.model.VaultItemType
 import com.example.myspacepersonalhub.core.security.CryptoManager
 import kotlinx.coroutines.flow.Flow
+import com.example.myspacepersonalhub.core.model.SyncState
 import java.io.File
 import java.util.UUID
 
 class VaultRepository(
     private val vaultDao: VaultDao,
-    private val cryptoManager: CryptoManager
+    private val cryptoManager: CryptoManager,
+    private val onDataChanged: (() -> Unit)? = null
 ) {
 
     fun getAllVaultItems(): Flow<List<VaultItemEntity>> = vaultDao.getAllVaultItems()
@@ -32,9 +34,12 @@ class VaultRepository(
             encryptedSecretText = encrypted.ciphertextBase64,
             ivBase64 = encrypted.ivBase64,
             encryptionVersion = encrypted.version,
-            fileSizeBytes = secretText.toByteArray(Charsets.UTF_8).size.toLong()
+            fileSizeBytes = secretText.toByteArray(Charsets.UTF_8).size.toLong(),
+            updatedAt = System.currentTimeMillis(),
+            syncState = SyncState.PENDING_CREATE
         )
         vaultDao.insertVaultItem(entity)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
@@ -52,9 +57,11 @@ class VaultRepository(
             ivBase64 = encrypted.ivBase64,
             encryptionVersion = encrypted.version,
             fileSizeBytes = secretText.toByteArray(Charsets.UTF_8).size.toLong(),
-            updatedAt = System.currentTimeMillis()
+            updatedAt = System.currentTimeMillis(),
+            syncState = SyncState.PENDING_UPDATE
         )
         vaultDao.updateVaultItem(updated)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
@@ -89,9 +96,12 @@ class VaultRepository(
             ivBase64 = ivBase64,
             encryptionVersion = 1,
             mimeType = mimeType,
-            fileSizeBytes = sourceFile.length()
+            fileSizeBytes = sourceFile.length(),
+            updatedAt = System.currentTimeMillis(),
+            syncState = SyncState.PENDING_CREATE
         )
         vaultDao.insertVaultItem(entity)
+        onDataChanged?.invoke()
         return Result.success(Unit)
     }
 
@@ -109,7 +119,8 @@ class VaultRepository(
                 File(item.encryptedLocalPath).delete()
             } catch (_: Exception) {}
         }
-        vaultDao.deleteVaultItem(item)
+        vaultDao.softDeleteVaultItem(item.id)
+        onDataChanged?.invoke()
     }
 
     fun getVaultItemCount(): Flow<Int> = vaultDao.getVaultItemCount()

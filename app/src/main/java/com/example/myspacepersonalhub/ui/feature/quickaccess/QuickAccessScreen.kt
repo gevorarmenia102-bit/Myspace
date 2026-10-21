@@ -32,7 +32,8 @@ import java.util.UUID
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickAccessScreen(
-    viewModel: QuickAccessViewModel
+    viewModel: QuickAccessViewModel,
+    onSyncClick: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -42,6 +43,14 @@ fun QuickAccessScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Quick Access", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = {
+                        onSyncClick()
+                        com.example.myspacepersonalhub.core.util.SnackbarController.showMessage("⚡ Realtime Sync started...")
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Sync Quick Access", tint = AccentAmber)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },

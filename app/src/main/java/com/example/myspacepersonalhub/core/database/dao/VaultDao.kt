@@ -30,6 +30,12 @@ interface VaultDao {
     @Query("UPDATE vault_items SET deletedAt = :timestamp, syncState = 'PENDING_DELETE' WHERE id = :id")
     suspend fun softDeleteVaultItem(id: String, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE vault_items SET syncState = 'PENDING_CREATE' WHERE syncState = 'SYNCED'")
+    suspend fun markAllSyncedAsPending()
+
+    @Query("DELETE FROM vault_items WHERE id = :id")
+    suspend fun deleteVaultItemDirect(id: String)
+
     @Delete
     suspend fun deleteVaultItem(item: VaultItemEntity)
 }

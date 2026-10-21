@@ -50,6 +50,7 @@ fun SettingsScreen(
     val secretTrigger = rememberSecretCloudTrigger(targetClicks = 15)
     var showBackupDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
+    var showCloudBackupDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -120,6 +121,142 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Restore Data", fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
+                    }
+                }
+            }
+
+            // ==========================================
+            // 2. CLOUD HUB & REALTIME SYNC (ONLINE)
+            // ==========================================
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(AccentEmerald.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.CloudSync, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                "REALTIME CLOUD SYNC",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        com.example.myspacepersonalhub.ui.components.SyncStatusBadge(
+                            status = state.syncStatus,
+                            onSyncClick = {
+                                viewModel.syncNow()
+                                SnackbarController.showMessage("⚡ Syncing Realtime Cloud Hub...")
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        "Live bi-directional synchronization via Firebase WebSockets across all your personal devices. Changes in Contacts, Notes, Tasks, Money, Vault, Habits, Goals, and Quick Access propagate automatically.",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Realtime Sync Toggle Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Automatic Realtime Sync", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text(
+                                if (state.preferences.realtimeSyncEnabled) "Active • Instant updates via WebSocket" else "Disabled • Manual sync only",
+                                fontSize = 10.sp,
+                                color = if (state.preferences.realtimeSyncEnabled) AccentEmerald else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = state.preferences.realtimeSyncEnabled,
+                            onCheckedChange = {
+                                viewModel.setRealtimeSyncEnabled(it)
+                                SnackbarController.showMessage(
+                                    if (it) "🟢 Realtime Sync enabled" else "⚪ Realtime Sync disabled"
+                                )
+                            },
+                            modifier = Modifier.scale(0.85f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Cloud action buttons
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                viewModel.syncNow()
+                                SnackbarController.showMessage("⚡ Synchronizing with Personal Cloud...")
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Sync Now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showCloudBackupDialog = true },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Cloud Backup", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            val intent = android.content.Intent(context, com.example.myspacepersonalhub.CloudConfigActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Cloud & GitHub Server Config", fontSize = 11.sp, color = AccentPurple, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -324,6 +461,25 @@ fun SettingsScreen(
                     },
                     onError = {
                         SnackbarController.showMessage("❌ $it")
+                    }
+                )
+            }
+        )
+    }
+
+    if (showCloudBackupDialog) {
+        CreateBackupDialog(
+            onDismiss = { showCloudBackupDialog = false },
+            onConfirm = { passphrase ->
+                SnackbarController.showMessage("⏳ Encrypting & uploading backup to GitHub...")
+                viewModel.uploadBackupToGitHub(
+                    passphrase = passphrase,
+                    onComplete = { msg ->
+                        showCloudBackupDialog = false
+                        SnackbarController.showMessage("☁️ $msg")
+                    },
+                    onError = { err ->
+                        SnackbarController.showMessage("❌ $err")
                     }
                 )
             }

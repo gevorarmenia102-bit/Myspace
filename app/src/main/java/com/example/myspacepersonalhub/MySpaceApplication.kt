@@ -86,9 +86,9 @@ class MySpaceApplication : Application() {
         noteRepository = NoteRepository(database.noteDao(), onDataChanged = { syncManager.triggerRealtimePush() })
         taskRepository = TaskRepository(database.taskDao(), onDataChanged = { syncManager.triggerRealtimePush() })
         moneyRepository = MoneyRepository(database.moneyDao(), onDataChanged = { syncManager.triggerRealtimePush() })
-        vaultRepository = VaultRepository(database.vaultDao(), cryptoManager)
-        trackerRepository = TrackerRepository(database.trackerDao())
-        quickAccessRepository = QuickAccessRepository(database.quickAccessDao())
+        vaultRepository = VaultRepository(database.vaultDao(), cryptoManager, onDataChanged = { syncManager.triggerRealtimePush() })
+        trackerRepository = TrackerRepository(database.trackerDao(), onDataChanged = { syncManager.triggerRealtimePush() })
+        quickAccessRepository = QuickAccessRepository(database.quickAccessDao(), onDataChanged = { syncManager.triggerRealtimePush() })
         backupRepository = BackupRepository(database)
 
         // 4. Schedule Background Periodic Sync via WorkManager
