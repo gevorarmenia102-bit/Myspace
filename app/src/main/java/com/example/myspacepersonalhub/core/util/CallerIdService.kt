@@ -23,6 +23,19 @@ data class CallerIdResult(
 
 object CallerIdService {
 
+    private const val PREFS_NAME = "myspace_caller_id_prefs"
+    private const val KEY_TRUECALLER_TOKEN = "truecaller_token"
+
+    fun getTruecallerToken(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_TRUECALLER_TOKEN, null)?.trim()?.ifBlank { null }
+    }
+
+    fun setTruecallerToken(context: Context, token: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_TRUECALLER_TOKEN, token.trim()).apply()
+    }
+
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(6, TimeUnit.SECONDS)
@@ -33,7 +46,8 @@ object CallerIdService {
     /**
      * Looks up name for a phone number using:
      * 1. Device Contacts & Call Logs (ContactsContract.PhoneLookup)
-     * 2. Truecaller / Cloud Caller ID API if available
+     * 2. Truecaller API (with stored Installation ID)
+     * 3. Fallback Cloud Directory
      */
     suspend fun lookupCallerId(
         context: Context,
@@ -50,8 +64,9 @@ object CallerIdService {
             return@withContext localResult
         }
 
-        // 2. Query Truecaller API if token is provided or fallback cloud reverse directory
-        val onlineResult = queryOnlineCallerId(clean, countryIso, truecallerToken)
+        // 2. Query Truecaller API with saved token or parameter
+        val effectiveToken = truecallerToken ?: getTruecallerToken(context)
+        val onlineResult = queryOnlineCallerId(clean, countryIso, effectiveToken)
         if (onlineResult != null) {
             return@withContext onlineResult
         }
@@ -59,7 +74,7 @@ object CallerIdService {
         null
     }
 
-    private fun queryDeviceContacts(context: Context, phoneNumber: String): CallerIdResult? {
+    fun queryDeviceContacts(context: Context, phoneNumber: String): CallerIdResult? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             return null
         }
@@ -107,7 +122,11 @@ object CallerIdService {
         // If Truecaller Bearer token is provided
         if (!truecallerToken.isNullOrBlank()) {
             try {
-                val url = "https://search5-noneu.truecaller.com/v2/search?q=${phoneNumber}&countryCode=$iso&type=4"
+                val cleanPhone = CountryPhoneHelper.normalizeToE164(phoneNumber)
+                val encodedPhone = Uri.encode(cleanPhone)
+                val url = "https://search5-noneu.truecaller.com/v2/search?q=$encodedPhone&countryCode=$iso&type=4"
+                android.util.Log.d("CallerIdService", "Querying Truecaller at $url")
+
                 val request = Request.Builder()
                     .url(url)
                     .header("Authorization", "Bearer ${truecallerToken.trim()}")
@@ -115,6 +134,7 @@ object CallerIdService {
                     .build()
 
                 httpClient.newCall(request).execute().use { response ->
+                    android.util.Log.d("CallerIdService", "Truecaller HTTP response code: ${response.code}")
                     if (response.isSuccessful) {
                         val body = response.body?.string()
                         if (!body.isNullOrBlank()) {

@@ -49,8 +49,18 @@ import com.example.myspacepersonalhub.core.util.SnackbarController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import java.io.File
 import java.util.UUID
+
+data class PhoneEditItem(
+    val id: String = UUID.randomUUID().toString(),
+    val country: CountryInfo = CountryPhoneHelper.defaultCountry(),
+    val nationalNumber: String = "",
+    val label: String = "Mobile"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,7 +84,17 @@ fun ContactEditScreen(
     var familyName by remember { mutableStateOf("") }
     var nickname by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var phoneNumbers by remember { mutableStateOf(listOf(PhoneNumber(number = "", label = "Mobile"))) }
+    var phoneEditItems by remember {
+        mutableStateOf(
+            listOf(
+                PhoneEditItem(
+                    country = CountryPhoneHelper.defaultCountry(),
+                    nationalNumber = "",
+                    label = "Mobile"
+                )
+            )
+        )
+    }
     var profileImageLocalPath by rememberSaveable { mutableStateOf<String?>(null) }
     var company by remember { mutableStateOf("") }
     var jobTitle by remember { mutableStateOf("") }
@@ -100,6 +120,19 @@ fun ContactEditScreen(
     var isLoaded by remember { mutableStateOf(false) }
     var showCountryPickerForIndex by remember { mutableStateOf<Int?>(null) }
     var isLookingUpCallerId by remember { mutableStateOf(false) }
+    var showTruecallerDialog by remember { mutableStateOf(false) }
+    var pendingLookupPhone by remember { mutableStateOf<String?>(null) }
+    var pendingLookupCountryIso by remember { mutableStateOf<String?>(null) }
+
+    val contactsPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            SnackbarController.showMessage("Contacts permission granted. Tap Auto-fill again.")
+        } else {
+            SnackbarController.showMessage("Contacts permission needed to read phone names")
+        }
+    }
 
     val processAndSaveImage: (Uri) -> Unit = { sourceUri ->
         isProcessingImage = true
@@ -238,7 +271,19 @@ fun ContactEditScreen(
                 familyName = c.familyName ?: ""
                 nickname = c.nickname ?: ""
                 email = c.email ?: ""
-                phoneNumbers = if (c.phoneNumbers.isNotEmpty()) c.phoneNumbers else listOf(PhoneNumber(number = "", label = "Mobile"))
+                phoneEditItems = if (c.phoneNumbers.isNotEmpty()) {
+                    c.phoneNumbers.map { pn ->
+                        val detected = CountryPhoneHelper.detectCountry(pn.number) ?: CountryPhoneHelper.defaultCountry()
+                        val national = CountryPhoneHelper.extractNationalPart(pn.number, detected)
+                        PhoneEditItem(
+                            country = detected,
+                            nationalNumber = national,
+                            label = pn.label
+                        )
+                    }
+                } else {
+                    listOf(PhoneEditItem(country = CountryPhoneHelper.defaultCountry(), nationalNumber = "", label = "Mobile"))
+                }
                 profileImageLocalPath = c.profileImageLocalPath
                 company = c.company ?: ""
                 jobTitle = c.jobTitle ?: ""
@@ -288,8 +333,11 @@ fun ContactEditScreen(
                                 emailError = null
                             }
 
-                            val cleanPhones = phoneNumbers
-                                .map { it.copy(number = it.number.trim()) }
+                            val cleanPhones = phoneEditItems
+                                .map { item ->
+                                    val full = CountryPhoneHelper.combineToInternational(item.country, item.nationalNumber)
+                                    PhoneNumber(number = full.trim(), label = item.label)
+                                }
                                 .filter { it.number.isNotBlank() }
 
                             val parsedTags = tagsInput.split(",")
@@ -497,11 +545,7 @@ fun ContactEditScreen(
             // Phone Numbers Section
             Text("PHONE NUMBERS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
 
-            phoneNumbers.forEachIndexed { index, phone ->
-                val detectedCountry = remember(phone.number) {
-                    CountryPhoneHelper.detectCountry(phone.number) ?: CountryPhoneHelper.defaultCountry()
-                }
-
+            phoneEditItems.forEachIndexed { index, item ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
@@ -518,7 +562,7 @@ fun ContactEditScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Country Selector Button with Flag and Dial Code
+                            // Country Selector Button with Flag and Dial Code (e.g. 🇦🇲 +374 ▼)
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -530,10 +574,10 @@ fun ContactEditScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp)
                                 ) {
-                                    Text(detectedCountry.flag, fontSize = 22.sp)
+                                    Text(item.country.flag, fontSize = 22.sp)
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        detectedCountry.dialCode,
+                                        item.country.dialCode,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -548,19 +592,37 @@ fun ContactEditScreen(
                                 }
                             }
 
-                            // Phone Number TextField with As-You-Type Formatting
+                            // Phone Number TextField: ONLY national number digits without country code!
+                            // Enforces numeric phone keyboard and strictly strips non-digits
+                            val sampleNational = remember(item.country) {
+                                item.country.sampleFormat.removePrefix(item.country.dialCode).trim()
+                            }
+
                             OutlinedTextField(
-                                value = phone.number,
-                                onValueChange = { newNum ->
-                                    val detected = CountryPhoneHelper.detectCountry(newNum)
-                                    val iso = detected?.iso2 ?: detectedCountry.iso2
-                                    val formatted = CountryPhoneHelper.formatAsYouType(newNum, iso)
-                                    val updated = phoneNumbers.toMutableList()
-                                    updated[index] = phone.copy(number = formatted)
-                                    phoneNumbers = updated
+                                value = item.nationalNumber,
+                                onValueChange = { input ->
+                                    if (input.contains("+")) {
+                                        // Pasted international number (e.g. +374 95 110691)
+                                        val detected = CountryPhoneHelper.detectCountry(input) ?: item.country
+                                        val national = CountryPhoneHelper.extractNationalPart(input, detected)
+                                        val updated = phoneEditItems.toMutableList()
+                                        updated[index] = item.copy(country = detected, nationalNumber = national)
+                                        phoneEditItems = updated
+                                    } else {
+                                        // Strictly numbers only: discard letters, symbols, etc.
+                                        val digitsOnly = input.filter { it.isDigit() }
+                                        val formatted = CountryPhoneHelper.formatNationalAsYouType(digitsOnly, item.country)
+                                        val updated = phoneEditItems.toMutableList()
+                                        updated[index] = item.copy(nationalNumber = formatted)
+                                        phoneEditItems = updated
+                                    }
                                 },
-                                label = { Text(detectedCountry.name) },
-                                placeholder = { Text(detectedCountry.sampleFormat) },
+                                label = { Text("Local Number (${item.country.iso2})") },
+                                placeholder = { Text(sampleNational) },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Phone,
+                                    imeAction = ImeAction.Next
+                                ),
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
@@ -569,10 +631,10 @@ fun ContactEditScreen(
                             // Remove button
                             IconButton(
                                 onClick = {
-                                    if (phoneNumbers.size > 1) {
-                                        phoneNumbers = phoneNumbers.filterIndexed { i, _ -> i != index }
+                                    if (phoneEditItems.size > 1) {
+                                        phoneEditItems = phoneEditItems.filterIndexed { i, _ -> i != index }
                                     } else {
-                                        phoneNumbers = listOf(phone.copy(number = ""))
+                                        phoneEditItems = listOf(item.copy(nationalNumber = ""))
                                     }
                                 }
                             ) {
@@ -592,16 +654,50 @@ fun ContactEditScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            val digitCount = item.nationalNumber.filter { it.isDigit() }.length
+                            val fullNumber = remember(item.country, item.nationalNumber) {
+                                CountryPhoneHelper.combineToInternational(item.country, item.nationalNumber)
+                            }
+
                             // Caller ID / Truecaller Auto-Fill Button
-                            val digitCount = phone.number.filter { it.isDigit() }.length
                             FilledTonalButton(
                                 onClick = {
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+                                        contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                                    }
+
                                     coroutineScope.launch {
                                         isLookingUpCallerId = true
+                                        // 1. First check local contacts
+                                        val localFound = withContext(Dispatchers.IO) {
+                                            CallerIdService.queryDeviceContacts(context, fullNumber)
+                                        }
+
+                                        if (localFound != null) {
+                                            isLookingUpCallerId = false
+                                            displayName = localFound.name
+                                            val (first, last) = CallerIdService.splitFullName(localFound.name)
+                                            if (givenName.isBlank()) givenName = first
+                                            if (familyName.isBlank()) familyName = last
+                                            SnackbarController.showMessage("✨ Auto-filled: ${localFound.name} (Device Contacts)")
+                                            return@launch
+                                        }
+
+                                        // 2. Check if Truecaller token is configured
+                                        val token = CallerIdService.getTruecallerToken(context)
+                                        if (token.isNullOrBlank()) {
+                                            isLookingUpCallerId = false
+                                            pendingLookupPhone = fullNumber
+                                            pendingLookupCountryIso = item.country.iso2
+                                            showTruecallerDialog = true
+                                            return@launch
+                                        }
+
+                                        // 3. Perform live lookup with token
                                         val result = CallerIdService.lookupCallerId(
                                             context = context,
-                                            rawPhone = phone.number,
-                                            countryIso = detectedCountry.iso2
+                                            rawPhone = fullNumber,
+                                            countryIso = item.country.iso2
                                         )
                                         isLookingUpCallerId = false
                                         if (result != null) {
@@ -611,11 +707,11 @@ fun ContactEditScreen(
                                             if (familyName.isBlank()) familyName = last
                                             SnackbarController.showMessage("✨ Auto-filled: ${result.name} (${result.source})")
                                         } else {
-                                            SnackbarController.showMessage("No name found for ${phone.number}")
+                                            SnackbarController.showMessage("No name found for $fullNumber in Truecaller")
                                         }
                                     }
                                 },
-                                enabled = digitCount >= 5 && !isLookingUpCallerId,
+                                enabled = digitCount >= 4 && !isLookingUpCallerId,
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                 modifier = Modifier.height(34.dp)
@@ -631,11 +727,11 @@ fun ContactEditScreen(
                             }
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                val hasDigits = digitCount >= 6
+                                val hasDigits = digitCount >= 5
 
                                 // WhatsApp quick launch
                                 IconButton(
-                                    onClick = { IntentUtils.openWhatsApp(context, phone.number) },
+                                    onClick = { IntentUtils.openWhatsApp(context, fullNumber) },
                                     enabled = hasDigits,
                                     modifier = Modifier.size(34.dp)
                                 ) {
@@ -649,7 +745,7 @@ fun ContactEditScreen(
 
                                 // Telegram quick launch
                                 IconButton(
-                                    onClick = { IntentUtils.openTelegram(context, phone.number) },
+                                    onClick = { IntentUtils.openTelegram(context, fullNumber) },
                                     enabled = hasDigits,
                                     modifier = Modifier.size(34.dp)
                                 ) {
@@ -667,7 +763,7 @@ fun ContactEditScreen(
                                     FilterChip(
                                         selected = false,
                                         onClick = { showLabelMenu = true },
-                                        label = { Text(phone.label, fontSize = 11.sp) },
+                                        label = { Text(item.label, fontSize = 11.sp) },
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.height(32.dp)
                                     )
@@ -679,9 +775,9 @@ fun ContactEditScreen(
                                             DropdownMenuItem(
                                                 text = { Text(lbl) },
                                                 onClick = {
-                                                    val updated = phoneNumbers.toMutableList()
-                                                    updated[index] = phone.copy(label = lbl)
-                                                    phoneNumbers = updated
+                                                    val updated = phoneEditItems.toMutableList()
+                                                    updated[index] = item.copy(label = lbl)
+                                                    phoneEditItems = updated
                                                     showLabelMenu = false
                                                 }
                                             )
@@ -696,7 +792,13 @@ fun ContactEditScreen(
             }
 
             TextButton(
-                onClick = { phoneNumbers = phoneNumbers + PhoneNumber(number = "", label = "Mobile") }
+                onClick = {
+                    phoneEditItems = phoneEditItems + PhoneEditItem(
+                        country = CountryPhoneHelper.defaultCountry(),
+                        nationalNumber = "",
+                        label = "Mobile"
+                    )
+                }
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
@@ -1012,27 +1114,101 @@ fun ContactEditScreen(
 
     if (showCountryPickerForIndex != null) {
         val targetIdx = showCountryPickerForIndex!!
-        val currentPhone = phoneNumbers.getOrNull(targetIdx)
-        val selectedIso = currentPhone?.let { CountryPhoneHelper.detectCountry(it.number)?.iso2 }
+        val currentItem = phoneEditItems.getOrNull(targetIdx)
+        val selectedIso = currentItem?.country?.iso2
 
         CountryPickerBottomSheet(
             selectedIso = selectedIso,
             onDismissRequest = { showCountryPickerForIndex = null },
             onCountrySelected = { country ->
-                if (targetIdx in phoneNumbers.indices) {
-                    val p = phoneNumbers[targetIdx]
-                    val oldCountry = CountryPhoneHelper.detectCountry(p.number)
-                    val rawClean = p.number.filter { it.isDigit() || it == '+' }
-                    val digits = if (oldCountry != null && rawClean.startsWith(oldCountry.dialCode)) {
-                        rawClean.removePrefix(oldCountry.dialCode).trim()
-                    } else {
-                        rawClean.removePrefix("+").trimStart('0')
+                if (targetIdx in phoneEditItems.indices) {
+                    val p = phoneEditItems[targetIdx]
+                    val reFormatted = CountryPhoneHelper.formatNationalAsYouType(p.nationalNumber, country)
+                    val updated = phoneEditItems.toMutableList()
+                    updated[targetIdx] = p.copy(country = country, nationalNumber = reFormatted)
+                    phoneEditItems = updated
+                }
+                showCountryPickerForIndex = null
+            }
+        )
+    }
+
+    if (showTruecallerDialog) {
+        var tokenInput by remember {
+            mutableStateOf(CallerIdService.getTruecallerToken(context) ?: "")
+        }
+
+        AlertDialog(
+            onDismissRequest = { showTruecallerDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.PhoneCallback,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text("Truecaller Auto-fill Setup", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Truecaller requires an Installation Token to search their live global caller directory. Local device contacts are searched automatically without any token.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = tokenInput,
+                        onValueChange = { tokenInput = it },
+                        label = { Text("Truecaller Installation Token / Bearer") },
+                        placeholder = { Text("e.g. a1k07--...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    if (tokenInput.isNotBlank()) {
+                        Text(
+                            "✅ Token will be saved on this device for one-tap auto-fill.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
-                    val combined = if (digits.isBlank()) "${country.dialCode} " else "${country.dialCode} $digits"
-                    val formatted = CountryPhoneHelper.formatAsYouType(combined, country.iso2)
-                    val updated = phoneNumbers.toMutableList()
-                    updated[targetIdx] = p.copy(number = formatted)
-                    phoneNumbers = updated
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tokenInput.isNotBlank()) {
+                            CallerIdService.setTruecallerToken(context, tokenInput)
+                        }
+                        showTruecallerDialog = false
+                        val phoneToSearch = pendingLookupPhone
+                        val isoToSearch = pendingLookupCountryIso
+                        if (!phoneToSearch.isNullOrBlank()) {
+                            coroutineScope.launch {
+                                isLookingUpCallerId = true
+                                val result = CallerIdService.lookupCallerId(context, phoneToSearch, isoToSearch)
+                                isLookingUpCallerId = false
+                                if (result != null) {
+                                    displayName = result.name
+                                    val (first, last) = CallerIdService.splitFullName(result.name)
+                                    if (givenName.isBlank()) givenName = first
+                                    if (familyName.isBlank()) familyName = last
+                                    SnackbarController.showMessage("✨ Auto-filled: ${result.name} (${result.source})")
+                                } else {
+                                    SnackbarController.showMessage("No name found for $phoneToSearch")
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(if (tokenInput.isNotBlank()) "Save & Search" else "Search Contacts Only")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTruecallerDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )

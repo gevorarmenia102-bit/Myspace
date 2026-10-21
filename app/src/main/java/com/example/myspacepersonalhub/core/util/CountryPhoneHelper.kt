@@ -122,6 +122,141 @@ object CountryPhoneHelper {
     }
 
     /**
+     * Extracts ONLY the national/local digits/formatting from a phone string,
+     * stripping out the country's dial code if present.
+     * e.g. "+374 95 110691" with Armenia (+374) -> "95 110691"
+     * "+968 7812 3052" with Oman (+968) -> "7812 3052"
+     * "+880 1642-581346" with Bangladesh (+880) -> "1642-581346"
+     */
+    fun extractNationalPart(phone: String, country: CountryInfo): String {
+        var clean = phone.trim()
+        if (clean.startsWith("+")) {
+            if (clean.startsWith(country.dialCode)) {
+                clean = clean.removePrefix(country.dialCode).trim()
+            } else {
+                val matched = detectCountry(clean)
+                if (matched != null && clean.startsWith(matched.dialCode)) {
+                    clean = clean.removePrefix(matched.dialCode).trim()
+                } else {
+                    clean = clean.removePrefix("+").trim()
+                }
+            }
+        } else {
+            val dialDigits = country.dialCode.removePrefix("+")
+            if (clean.startsWith(dialDigits)) {
+                clean = clean.removePrefix(dialDigits).trim()
+            }
+        }
+        return formatNationalAsYouType(clean, country)
+    }
+
+    /**
+     * Formats national digits as-you-type based on the country:
+     * - Armenia (+374): e.g. "95 110691"
+     * - Oman (+968): e.g. "7812 3052"
+     * - Bangladesh (+880): e.g. "1642-581346" or "01642-581346"
+     * - US/Canada (+1): e.g. "(555) 123-4567"
+     * - UAE / Saudi (+971/+966): e.g. "50 123 4567"
+     */
+    fun formatNationalAsYouType(input: String, country: CountryInfo): String {
+        val digitsOnly = input.filter { it.isDigit() }
+        if (digitsOnly.isBlank()) return ""
+
+        return when (country.iso2) {
+            "AM" -> {
+                val digits = digitsOnly
+                when {
+                    digits.length <= 2 -> digits
+                    digits.length <= 5 -> "${digits.substring(0, 2)} ${digits.substring(2)}"
+                    digits.length <= 8 -> "${digits.substring(0, 2)} ${digits.substring(2, 5)} ${digits.substring(5)}"
+                    else -> "${digits.substring(0, 2)} ${digits.substring(2, 5)} ${digits.substring(5, 8)} ${digits.substring(8)}"
+                }
+            }
+            "OM" -> {
+                val digits = digitsOnly
+                when {
+                    digits.length <= 4 -> digits
+                    digits.length <= 8 -> "${digits.substring(0, 4)} ${digits.substring(4)}"
+                    else -> "${digits.substring(0, 4)} ${digits.substring(4, 8)} ${digits.substring(8)}"
+                }
+            }
+            "BD" -> {
+                val digits = digitsOnly
+                if (digits.startsWith("0")) {
+                    when {
+                        digits.length <= 5 -> digits
+                        digits.length <= 11 -> "${digits.substring(0, 5)}-${digits.substring(5)}"
+                        else -> "${digits.substring(0, 5)}-${digits.substring(5, 11)} ${digits.substring(11)}"
+                    }
+                } else {
+                    when {
+                        digits.length <= 4 -> digits
+                        digits.length <= 10 -> "${digits.substring(0, 4)}-${digits.substring(4)}"
+                        else -> "${digits.substring(0, 4)}-${digits.substring(4, 10)} ${digits.substring(10)}"
+                    }
+                }
+            }
+            "US", "CA" -> {
+                val digits = digitsOnly
+                when {
+                    digits.length <= 3 -> if (digits.length == 3) "($digits) " else digits
+                    digits.length <= 6 -> "(${digits.substring(0, 3)}) ${digits.substring(3)}"
+                    digits.length <= 10 -> "(${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6)}"
+                    else -> "(${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6, 10)} ${digits.substring(10)}"
+                }
+            }
+            "AE", "SA" -> {
+                val digits = digitsOnly
+                when {
+                    digits.length <= 2 -> digits
+                    digits.length <= 5 -> "${digits.substring(0, 2)} ${digits.substring(2)}"
+                    digits.length <= 9 -> "${digits.substring(0, 2)} ${digits.substring(2, 5)} ${digits.substring(5)}"
+                    else -> "${digits.substring(0, 2)} ${digits.substring(2, 5)} ${digits.substring(5, 9)} ${digits.substring(9)}"
+                }
+            }
+            "IN" -> {
+                val digits = digitsOnly
+                when {
+                    digits.length <= 5 -> digits
+                    digits.length <= 10 -> "${digits.substring(0, 5)} ${digits.substring(5)}"
+                    else -> "${digits.substring(0, 5)} ${digits.substring(5, 10)} ${digits.substring(10)}"
+                }
+            }
+            else -> {
+                val digits = digitsOnly
+                when {
+                    digits.length <= 3 -> digits
+                    digits.length <= 7 -> "${digits.substring(0, 3)} ${digits.substring(3)}"
+                    digits.length <= 11 -> "${digits.substring(0, 3)} ${digits.substring(3, 7)} ${digits.substring(7)}"
+                    else -> digits
+                }
+            }
+        }
+    }
+
+    /**
+     * Combines country and national number into a clean full international string for saving or intent launching.
+     * e.g. Armenia (+374) + "95 110691" -> "+374 95 110691"
+     */
+    fun combineToInternational(country: CountryInfo, nationalNumber: String): String {
+        val clean = nationalNumber.trim()
+        if (clean.isBlank()) return ""
+        if (clean.startsWith("+")) return clean
+
+        val dialDigits = country.dialCode.removePrefix("+")
+        var stripped = if (clean.startsWith(dialDigits)) {
+            clean.removePrefix(dialDigits).trim()
+        } else clean
+
+        if (country.iso2 == "BD" && stripped.startsWith("0")) {
+            stripped = stripped.removePrefix("0")
+        }
+
+        val formatted = formatNationalAsYouType(stripped, country)
+        return "${country.dialCode} $formatted"
+    }
+
+    /**
      * Cleanly formats a phone number for display into international standard with country spacing.
      * e.g. "+37495110691" -> "+374 95 110691"
      * "01642581346" (with BD default) -> "+880 1642-581346"
@@ -138,7 +273,6 @@ object CountryPhoneHelper {
             }
             phoneUtil.format(proto, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)
         } catch (_: NumberParseException) {
-            // Fallback manual clean spacing if libphonenumber cannot parse
             manualFormatFallback(clean)
         } catch (_: Exception) {
             clean
